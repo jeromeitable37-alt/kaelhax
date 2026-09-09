@@ -523,6 +523,8 @@ export default function Home() {
       '/panel-showcase.png'
     );
 
+  const [imageErrors, setImageErrors] = useState({});
+
   const [user, setUser] =
     useState(null);
 
@@ -677,6 +679,8 @@ export default function Home() {
         setData(
           merged
         );
+
+        setImageErrors({});
 
         setImagePreview(
           merged.products?.[0]
@@ -3584,17 +3588,23 @@ export default function Home() {
 
                   <div className="product-image">
 
-                    <img
-                      key={`${product.name}-${product.imageVersion || product.image || 'default-image'}`}
-                      src={product.image || '/panel-showcase.png'}
-                      alt={product.name}
-                      loading={index < 3 ? 'eager' : 'lazy'}
-                      decoding="async"
-                      onError={(event) => {
-                        event.currentTarget.onerror = null;
-                        event.currentTarget.src = '/panel-showcase.png';
-                      }}
-                    />
+                    {imageErrors[index] ? (
+                      <div className="product-image-error">
+                        <span>IMAGE UNAVAILABLE</span>
+                        <small>Firebase Storage image could not be loaded</small>
+                      </div>
+                    ) : (
+                      <img
+                        key={`${product.name}-${product.imageVersion || product.image || 'default-image'}`}
+                        src={product.image || '/panel-showcase.png'}
+                        alt={product.name}
+                        loading={index < 3 ? 'eager' : 'lazy'}
+                        decoding="async"
+                        onError={() => {
+                          setImageErrors((prev) => ({ ...prev, [index]: true }));
+                        }}
+                      />
+                    )}
 
                     <div className="image-overlay">
 

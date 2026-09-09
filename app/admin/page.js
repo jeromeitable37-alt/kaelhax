@@ -455,6 +455,45 @@ export default function AdminPage() {
     }));
   }
 
+  async function publishProductImage(index, imageUrl) {
+    if (!db || !isAdmin || !imageUrl) {
+      throw new Error('Admin Firebase access is required to publish the image.');
+    }
+
+    const currentProducts = Array.isArray(data.products)
+      ? data.products.map((product) => ({ ...product }))
+      : [];
+
+    if (!currentProducts[index]) {
+      throw new Error('Product no longer exists. Refresh the admin page and try again.');
+    }
+
+    currentProducts[index] = {
+      ...currentProducts[index],
+      image: imageUrl,
+      imageVersion: Date.now(),
+    };
+
+    const firestoreData = sanitizeForFirestore({
+      products: currentProducts,
+    });
+
+    await setDoc(
+      doc(db, 'site', 'config'),
+      {
+        products: firestoreData.products,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Keep the admin UI synchronized with exactly what was published.
+    setData((prev) => ({
+      ...prev,
+      products: currentProducts,
+    }));
+  }
+
   function addPriceOption(index) {
     setData((prev) => ({
       ...prev,
@@ -1945,22 +1984,22 @@ export default function AdminPage() {
                                     );
 
                                   if (url) {
-                                    updateProduct(
-                                      index,
-                                      {
-                                        image:
-                                          url,
-                                        imageVersion:
-                                          Date.now(),
-                                      }
-                                    );
+                                    try {
+                                      await publishProductImage(index, url);
 
-                                    // Allow the same file to be selected again.
-                                    e.target.value = '';
+                                      // Allow the same file to be selected again.
+                                      e.target.value = '';
 
-                                    flash(
-                                      'Image uploaded. Save to publish.'
-                                    );
+                                      flash(
+                                        'Image uploaded and published successfully.'
+                                      );
+                                    } catch (publishError) {
+                                      console.error('Product image publish failed:', publishError);
+                                      flash(
+                                        publishError?.message ||
+                                          'Image uploaded, but could not publish the new image.'
+                                      );
+                                    }
                                   }
                                 }}
                               />
