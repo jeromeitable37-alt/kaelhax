@@ -881,31 +881,6 @@ export default function Home() {
 
   /*
    * =========================================================
-   * ADMIN AUTO-REDIRECT
-   * =========================================================
-   * Once Firebase confirms the signed-in account is an admin,
-   * send it directly to the dedicated admin console instead of
-   * showing the storefront first.
-   */
-
-  useEffect(() => {
-    if (
-      typeof window === 'undefined' ||
-      window.location.pathname !== '/' ||
-      !firebaseConfigured ||
-      !user ||
-      !cloudReady ||
-      !isAdmin
-    ) {
-      return;
-    }
-
-    window.location.replace('/admin');
-  }, [user?.uid, cloudReady, isAdmin]);
-
-
-  /*
-   * =========================================================
    * SITE CONFIG
    * =========================================================
    */
@@ -3575,19 +3550,16 @@ export default function Home() {
               ) => (
                 <article
                   className="product"
-                  key={`${product.name}-${index}`}
+                  key={`${product.name}-${index}-${product.imageVersion || product.image || ''}`}
                 >
 
                   <div className="product-image">
 
                     <img
-                      src={
-                        product.image ||
-                        '/panel-showcase.png'
-                      }
-                      alt={
-                        product.name
-                      }
+                      src={product.image || '/panel-showcase.png'}
+                      alt={product.name}
+                      loading={index < 3 ? 'eager' : 'lazy'}
+                      onError={(event) => { event.currentTarget.src = '/panel-showcase.png'; }}
                     />
 
                     <div className="image-overlay">
@@ -3631,9 +3603,21 @@ export default function Home() {
 
                     <div className="product-bottom">
 
-                      <b>
-                        {product.price}
-                      </b>
+                      <div className="product-pricing">
+                        {Array.isArray(product.priceOptions) && product.priceOptions.length ? (
+                          <div className="product-price-tiers">
+                            {product.priceOptions.map((option, priceIndex) => (
+                              <div className="product-price-tier" key={`${product.name}-tier-${priceIndex}`}>
+                                <span>→ {option.label}</span>
+                                <b>{option.price}</b>
+                                {option.slots ? <small>({option.slots})</small> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <b>{product.price || 'FREE'}</b>
+                        )}
+                      </div>
 
                       <button
                         className="card-action"

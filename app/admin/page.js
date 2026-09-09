@@ -52,6 +52,10 @@ const DEFAULT = {
       status: 'LIVE',
       desc: 'A polished interface preview for channel branding, product presentation, and community landing pages.',
       price: 'FREE',
+      priceOptions: [
+        { label: '30 DAYS', price: '₱250', slots: '0/5' },
+        { label: 'LIFETIME', price: '₱350', slots: '0/3' },
+      ],
       duration: 'One-time',
       deliveryUrl: '',
       image: '/panel-showcase.png',
@@ -62,6 +66,7 @@ const DEFAULT = {
       status: 'ONLINE',
       desc: 'Release notes, news, previews, and community announcements connected directly to Telegram.',
       price: 'FREE',
+      priceOptions: [],
       duration: 'One-time',
       deliveryUrl: '',
       image: '/panel-showcase.png',
@@ -72,6 +77,7 @@ const DEFAULT = {
       status: 'READY',
       desc: 'A landing area for legitimate utilities, guides, presets, downloads, tournaments, and resources.',
       price: 'FREE',
+      priceOptions: [],
       duration: 'One-time',
       deliveryUrl: '',
       image: '/panel-showcase.png',
@@ -158,12 +164,28 @@ function mergeData(parsed) {
     },
 
     products: Array.isArray(parsed?.products)
-      ? parsed.products
-      : DEFAULT.products,
+      ? parsed.products.map(normalizeProduct)
+      : DEFAULT.products.map(normalizeProduct),
 
     faq: Array.isArray(parsed?.faq)
       ? parsed.faq
       : DEFAULT.faq,
+  };
+}
+
+function normalizeProduct(product) {
+  const priceOptions = Array.isArray(product?.priceOptions)
+    ? product.priceOptions.filter(Boolean).map((option) => ({
+        label: String(option?.label || 'OPTION').trim(),
+        price: String(option?.price || '').trim(),
+        slots: String(option?.slots || '').trim(),
+      }))
+    : [];
+
+  return {
+    ...product,
+    price: String(product?.price ?? 'FREE'),
+    priceOptions,
   };
 }
 
@@ -433,6 +455,58 @@ export default function AdminPage() {
     }));
   }
 
+  function addPriceOption(index) {
+    setData((prev) => ({
+      ...prev,
+      products: prev.products.map((product, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...product,
+              priceOptions: [
+                ...(Array.isArray(product.priceOptions) ? product.priceOptions : []),
+                { label: 'NEW OPTION', price: '₱0', slots: '' },
+              ],
+            }
+          : product
+      ),
+    }));
+  }
+
+  function updatePriceOption(index, optionIndex, patch) {
+    setData((prev) => ({
+      ...prev,
+      products: prev.products.map((product, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...product,
+              priceOptions: (Array.isArray(product.priceOptions) ? product.priceOptions : []).map(
+                (option, priceIndex) =>
+                  priceIndex === optionIndex
+                    ? { ...option, ...patch }
+                    : option
+              ),
+            }
+          : product
+      ),
+    }));
+  }
+
+  function deletePriceOption(index, optionIndex) {
+    setData((prev) => ({
+      ...prev,
+      products: prev.products.map((product, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...product,
+              priceOptions: (Array.isArray(product.priceOptions) ? product.priceOptions : []).filter(
+                (_, priceIndex) => priceIndex !== optionIndex
+              ),
+            }
+          : product
+      ),
+    }));
+  }
+
   function addProduct() {
     setData((prev) => ({
       ...prev,
@@ -446,6 +520,7 @@ export default function AdminPage() {
           status: 'READY',
           desc: 'Add a description.',
           price: 'FREE',
+          priceOptions: [],
           duration: 'One-time',
           deliveryUrl: '',
           image: '/panel-showcase.png',
@@ -488,14 +563,16 @@ export default function AdminPage() {
 
     const objectRef = ref(
       storage,
-      `${folder}/${me.uid}/${Date.now()}-${safeName}`
+      `${folder}/${me.uid}/${Date.now()}-${crypto.randomUUID()}-${safeName}`
     );
 
     await uploadBytes(objectRef, file, {
-      contentType: file.type,
+      contentType: file.type || 'image/jpeg',
+      cacheControl: 'public,max-age=3600,must-revalidate',
     });
 
-    return getDownloadURL(objectRef);
+    const url = await getDownloadURL(objectRef);
+    return `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
   }
 
   /*
@@ -1682,7 +1759,7 @@ export default function AdminPage() {
                       (product, index) => (
                         <div
                           className="product-admin-row"
-                          key={`${product.name}-${index}`}
+                          key={`${product.name}-${index}-${product.imageVersion || product.image || ''}`}
                         >
 
                           <img
@@ -1690,7 +1767,8 @@ export default function AdminPage() {
                               product.image ||
                               '/panel-showcase.png'
                             }
-                            alt=""
+                            alt={product.name || 'Product image'}
+                            onError={(event) => { event.currentTarget.src = '/panel-showcase.png'; }}
                           />
 
                           <div className="product-admin-fields">
@@ -1801,6 +1879,55 @@ export default function AdminPage() {
                               }
                             />
 
+                            <div className="pricing-admin">
+                              <div className="pricing-admin-head">
+                                <div>
+                                  <span className="eyebrow">// PRICING</span>
+                                  <b>PRICE OPTIONS</b>
+                                </div>
+                                <button
+                                  className="outline-btn"
+                                  type="button"
+                                  onClick={() => addPriceOption(index)}
+                                >
+                                  + ADD TIER
+                                </button>
+                              </div>
+
+                              {Array.isArray(product.priceOptions) && product.priceOptions.length ? (
+                                <div className="pricing-option-list">
+                                  {product.priceOptions.map((option, optionIndex) => (
+                                    <div className="pricing-option-row" key={`${index}-${optionIndex}`}>
+                                      <input
+                                        value={option.label || ''}
+                                        placeholder="30 DAYS"
+                                        onChange={(e) => updatePriceOption(index, optionIndex, { label: e.target.value })}
+                                      />
+                                      <input
+                                        value={option.price || ''}
+                                        placeholder="₱250"
+                                        onChange={(e) => updatePriceOption(index, optionIndex, { price: e.target.value })}
+                                      />
+                                      <input
+                                        value={option.slots || ''}
+                                        placeholder="0/5"
+                                        onChange={(e) => updatePriceOption(index, optionIndex, { slots: e.target.value })}
+                                      />
+                                      <button
+                                        className="danger-btn"
+                                        type="button"
+                                        onClick={() => deletePriceOption(index, optionIndex)}
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="pricing-empty">Add tiers such as 30 DAYS / ₱250 / 0/5 and LIFETIME / ₱350 / 0/3.</p>
+                              )}
+                            </div>
+
                             <label className="upload-small">
                               UPLOAD IMAGE
 
@@ -1823,6 +1950,8 @@ export default function AdminPage() {
                                       {
                                         image:
                                           url,
+                                        imageVersion:
+                                          Date.now(),
                                       }
                                     );
 
