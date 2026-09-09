@@ -213,6 +213,7 @@ export default function AdminPage() {
 
   const [tab, setTab] = useState('overview');
   const [busy, setBusy] = useState(false);
+  const [uploadingProductIndex, setUploadingProductIndex] = useState(null);
   const [message, setMessage] = useState('');
 
   const [qrPreview, setQrPreview] = useState(
@@ -605,25 +606,17 @@ export default function AdminPage() {
 
   async function saveSite() {
     if (!db || !isAdmin) return;
-
     setBusy(true);
-
     try {
       const firestoreData = sanitizeForFirestore(data);
-
       await withTimeout(
-        setDoc(
-          doc(db, 'site', 'config'),
-          {
-            ...firestoreData,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        ),
+        setDoc(doc(db, 'site', 'config'), {
+          ...firestoreData,
+          updatedAt: serverTimestamp(),
+        }, { merge: true }),
         20000,
         'Saving site changes to Firestore'
       );
-
       flash('✓ Site changes published to Firebase.');
     } catch (error) {
       console.error('Failed to save site:', error);
@@ -632,6 +625,47 @@ export default function AdminPage() {
       setBusy(false);
     }
   }
+
+  async function publishProductImage(index, file) {
+    if (!file || !db || !isAdmin) return;
+    setUploadingProductIndex(index);
+    const previewUrl = URL.createObjectURL(file);
+    try {
+      updateProduct(index, { image: previewUrl, imageVersion: Date.now() });
+      const url = await uploadImage(file, 'products');
+      const current = data.products[index] || {};
+      const productId = String(current.id || `product-${index + 1}`);
+      const imageVersion = Date.now();
+      const updatedProducts = data.products.map((item, i) =>
+        i === index ? { ...item, id: productId, image: url, imageVersion } : item
+      );
+      const updatedProductImages = { ...(data.productImages || {}), [productId]: url };
+      await withTimeout(
+        setDoc(doc(db, 'site', 'config'), {
+          products: sanitizeForFirestore(updatedProducts),
+          productImages: sanitizeForFirestore(updatedProductImages),
+          updatedAt: serverTimestamp(),
+        }, { merge: true }),
+        20000,
+        'Publishing product image'
+      );
+      setData(prev => ({
+        ...prev,
+        productImages: updatedProductImages,
+        products: prev.products.map((item, i) =>
+          i === index ? { ...item, id: productId, image: url, imageVersion } : item
+        ),
+      }));
+      flash('✓ Product image uploaded and published.');
+    } catch (error) {
+      console.error('Product image publish failed:', error);
+      flash(error?.message || 'Product image upload failed.');
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+      setUploadingProductIndex(null);
+    }
+  }
+
 
   /*
    * ---------------------------------------------------------
@@ -1777,14 +1811,18 @@ export default function AdminPage() {
                           key={`${product.name}-${index}-${product.imageVersion || product.image || ''}`}
                         >
 
-                          <img
-                            src={
-                              product.image ||
-                              '/panel-showcase.png'
-                            }
-                            alt={product.name || 'Product image'}
-                            onError={(event) => { event.currentTarget.src = '/panel-showcase.png'; }}
-                          />
+                          {product.image ? (
+                            <img
+                              src={product.image}
+                              alt={product.name || 'Product image'}
+                              onError={(event) => {
+                                event.currentTarget.style.display = 'none';
+                                event.currentTarget.parentElement?.classList.add('image-load-error');
+                              }}
+                            />
+                          ) : (
+                            <div className="admin-image-empty">NO IMAGE</div>
+                          )}
 
                           <div className="product-admin-fields">
 
@@ -1948,69 +1986,12 @@ export default function AdminPage() {
 
                               <input
                                 type="file"
-                                accept="image/*"
-                                onChange={async (e) => {
-                                  const input = e.currentTarget;
-                                  const file = input.files?.[0];
-                                  input.value = '';
-                                  if (!file) return;
-
-                                  setBusy(true);
-                                  try {
-                                    const url = await uploadImage(file, 'products');
-                                    const productId = String(product.id || `product-${index + 1}`);
-                                    const imageVersion = Date.now();
-
-                                    // Build the complete product list from the CURRENT admin state.
-                                    // This is important for newly-created products that do not exist
-                                    // in Firestore yet. The old implementation only mapped existing
-                                    // cloud products, so a new product could lose its uploaded image.
-                                    const updatedProducts = data.products.map((currentProduct, currentIndex) =>
-                                      currentIndex === index
-                                        ? {
-                                            ...currentProduct,
-                                            id: productId,
-                                            image: url,
-                                            imageVersion,
-                                          }
-                                        : currentProduct
-                                    );
-
-                                    const configRef = doc(db, 'site', 'config');
-                                    await withTimeout(
-                                      setDoc(
-                                        configRef,
-                                        {
-                                          products: sanitizeForFirestore(updatedProducts),
-                                          updatedAt: serverTimestamp(),
-                                        },
-                                        { merge: true }
-                                      ),
-                                      20000,
-                                      'Publishing product image'
-                                    );
-
-                                    setData((prev) => ({
-                                      ...prev,
-                                      products: prev.products.map((currentProduct, currentIndex) =>
-                                        currentIndex === index
-                                          ? {
-                                              ...currentProduct,
-                                              id: productId,
-                                              image: url,
-                                              imageVersion,
-                                            }
-                                          : currentProduct
-                                      ),
-                                    }));
-
-                                    flash('✓ Product image uploaded and saved to Firebase.');
-                                  } catch (error) {
-                                    console.error('Product image publish failed:', error);
-                                    flash(error?.message || 'Product image upload failed.');
-                                  } finally {
-                                    setBusy(false);
-                                  }
+                                accept="image/png,image/jpeg,image/webp,image/gif"
+                                disabled={uploadingProductIndex === index}
+                                onChange={(e) => {
+                                  const file = e.currentTarget.files?.[0];
+                                  e.currentTarget.value = '';
+                                  if (file) publishProductImage(index, file);
                                 }}
                               />
                             </label>
@@ -2042,7 +2023,7 @@ export default function AdminPage() {
                     type="button"
                   >
                     {busy
-                      ? 'SAVING…'
+                      ? 'SAVING PRODUCTS…'
                       : 'SAVE PRODUCTS'}
                   </button>
 

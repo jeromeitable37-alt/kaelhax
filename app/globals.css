@@ -669,3 +669,23 @@ html[data-theme="light"] .security-card-admin,html[data-theme="light"] .settings
 html[data-theme="light"] .pricing-admin{background:#eef8f7;border-color:#bfd7d4}
 html[data-theme="light"] .pricing-admin-head b{color:#155f5b}
 html[data-theme="light"] .pricing-empty{color:#597577}
+
+/* V15 product and user profile improvements */
+.admin-image-empty{width:120px;height:90px;border:1px dashed #245257;border-radius:9px;display:grid;place-items:center;background:#050b0d;color:#4f7376;font:800 8px Orbitron;letter-spacing:.12em}
+.side-item{column-gap:14px}
+.side-item .ico{width:28px;height:28px;min-width:28px;flex:0 0 28px;display:grid;place-items:center;border:1px solid rgba(83,235,225,.14);border-radius:8px;background:rgba(29,232,220,.04);line-height:1}
+.side-item>span:not(.ico){min-width:0}
+.profile-user-modal{width:min(560px,94vw);max-height:86vh;overflow:auto}
+.user-profile-head{display:flex;gap:16px;align-items:center;padding-bottom:18px;border-bottom:1px solid #153438}
+.user-profile-head h2{font:800 22px Orbitron;margin:7px 0 4px}
+.user-profile-head p{margin:0;color:#6c8587;font-size:10px}
+.user-profile-avatar{width:82px;height:82px;border-radius:20px;border:1px solid #1b5759;background:#071416;display:grid;place-items:center;color:#75f7ef;font:900 28px Orbitron;overflow:hidden}
+.user-profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-photo-upload{display:block;margin:16px 0;border:1px solid #214c4f;background:#091517;border-radius:10px;padding:11px;text-align:center;color:#7ce8e1;font:800 8px Orbitron;cursor:pointer}
+.profile-photo-upload input{display:none}
+.profile-user-fields{display:grid;gap:12px}
+.profile-user-fields label{color:#789093;font:700 8px Orbitron;letter-spacing:.12em}
+.profile-user-fields input{display:block;width:100%;margin-top:6px;border:1px solid #1d383b;background:#071012;color:#e8eeef;border-radius:10px;padding:11px;font:500 11px Inter;outline:none}
+.profile-user-actions{display:flex;gap:9px;margin-top:17px}
+.profile-user-actions button{flex:1}
+@media(max-width:760px){.admin-image-empty{width:75px;height:65px}.profile-user-actions{flex-direction:column}.user-profile-head{align-items:flex-start}.side-item{column-gap:10px}}
