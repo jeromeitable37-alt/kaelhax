@@ -1,12 +1,9 @@
-KAELHAX enhanced patch
+KAELHAX Admin Mobile/UI V18
 
-Copy the files inside this zip into the matching project paths, replacing existing files when asked.
-
-Included:
-- app/page.js — admin accounts now auto-redirect to /admin after Firebase role confirmation.
-- app/admin/page.js — mobile off-canvas admin sidebar, fixed Confirm/Reject calls, Profile tab with profile photo upload + password reset, Settings tab with theme/motion preferences, improved header/account UI.
-- app/globals.css — sidebar icon spacing and new admin/profile/settings responsive styles.
-- lib/firebase-admin.js — lazy Firebase Admin initialization + robust private-key normalization and getAdminDb()/getAdminAuth()/getAdminStorage()/getAdminBucket().
-- app/api/telegram/webhook/route.js — consistent getAdminDb() usage and safer Telegram callback handling.
-
-Do NOT copy any .env files into GitHub. Keep Vercel secrets in Vercel Environment Variables.
+1. Admin mobile navigation is now a slide-out sidebar with hamburger button and backdrop.
+2. Admin sidebar closes automatically when a tab is selected or when viewport becomes desktop.
+3. Product editor is full-width on phones instead of squeezing fields beside the thumbnail.
+4. Product pricing rows stack cleanly on small screens.
+5. Storefront checks the Firebase users/{uid} document after authentication and redirects enabled admin accounts directly to /admin.
+6. Existing Firebase auth/profile and Firestore role checks are preserved.
+7. No Firebase console/rules changes are required for the UI/redirect changes.

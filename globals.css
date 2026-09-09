@@ -670,108 +670,57 @@ html[data-theme="light"] .pricing-admin{background:#eef8f7;border-color:#bfd7d4}
 html[data-theme="light"] .pricing-admin-head b{color:#155f5b}
 html[data-theme="light"] .pricing-empty{color:#597577}
 
-
 /* =========================================================
-   NEXORIUM ADMIN MOBILE DRAWER + PRODUCT LAYOUT FIX
+   V17 MOBILE ADMIN CONSOLE + PROFILE POLISH
    ========================================================= */
-.admin-mobile-menu{
-  display:none;
-  width:42px;height:42px;flex:0 0 42px;
-  border:1px solid #205b5f;border-radius:11px;
-  background:linear-gradient(145deg,#081719,#061113);
-  color:#72f8ee;cursor:pointer;
-  padding:9px;
-  align-items:center;justify-content:center;
-  flex-direction:column;gap:4px;
-  box-shadow:0 0 20px rgba(29,232,220,.06);
-}
-.admin-mobile-menu span{display:block;width:19px;height:2px;border-radius:2px;background:#72f8ee;transition:.2s}
-.admin-mobile-menu:hover{border-color:#41dcd6;box-shadow:0 0 24px rgba(29,232,220,.12)}
-.admin-sidebar-backdrop{display:none}
+.account-avatar-image{overflow:hidden;padding:0!important}
+.account-avatar-image img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
+.profile-avatar-button{border:0;cursor:pointer;padding:0}
+.profile-avatar-button img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
 
-/* Keep the admin navigation visually separated from its labels. */
-.admin-nav>button{
-  grid-template-columns:32px minmax(0,1fr) auto;
-  column-gap:14px;
-}
-.admin-nav>button span{
-  width:32px;height:32px;flex-basis:32px;border-radius:9px;
-}
+.user-profile-hero{display:flex;align-items:center;gap:18px;padding:4px 0 18px;border-bottom:1px solid #18383a;margin-bottom:18px}
+.user-profile-avatar{width:76px;height:76px;flex:0 0 76px;border-radius:18px;display:grid;place-items:center;overflow:hidden;border:1px solid #2b7776;background:linear-gradient(145deg,#0a292c,#071517);color:#6df5ec;font:900 26px Orbitron;box-shadow:0 0 30px rgba(29,232,220,.10)}
+.user-profile-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.user-profile-hero h2{margin:5px 0 4px;font-size:20px}
+.user-profile-hero p{margin:0;color:#678486;font-size:10px;word-break:break-all}
+.profile-user-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.profile-user-grid label{display:grid;gap:7px;color:#668486;font:800 8px Orbitron;letter-spacing:.12em}
+.profile-user-grid input{width:100%;padding:12px 13px;border:1px solid #214446;background:#091718;color:#e5f8f6;border-radius:10px;outline:none;font:600 11px Inter}
+.profile-user-grid input:focus{border-color:#37d9d0;box-shadow:0 0 0 3px rgba(29,232,220,.06)}
+.profile-photo-picker{cursor:pointer;align-content:start}
+.profile-photo-picker>input{display:none}
+.profile-photo-picker .outline-btn{display:flex;align-items:center;justify-content:center;min-height:40px}
+.profile-user-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.profile-user-actions .big{width:100%}
+
+.admin-mobile-menu{display:none}
+.admin-nav-backdrop{display:none}
 
 @media(max-width:760px){
-  .admin-route-head{
-    padding:0 12px;gap:10px;
-  }
-  .admin-route-head>.logo-lockup{flex:1;min-width:0}
-  .admin-route-head .logo-lockup strong{font-size:16px}
-  .admin-mobile-menu{display:flex}
-  .admin-route-head .top-actions{margin-left:auto}
-  .admin-route-head .account-chip{display:flex}
-  .admin-route-head .account-chip b,.admin-route-head .account-chip span:nth-child(2){display:none}
+  .admin-route-head{height:68px;padding:0 10px 0 8px;justify-content:space-between}
+  .admin-mobile-menu{position:relative;display:flex;flex:0 0 42px;width:42px;height:42px;border:1px solid #205d60;background:#081416;border-radius:12px;align-items:center;justify-content:center;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 0 18px rgba(29,232,220,.06)}
+  .admin-mobile-menu span{display:block;width:18px;height:2px;border-radius:2px;background:#65e9e0;transition:.2s}
+  .admin-mobile-menu[aria-expanded="true"] span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+  .admin-mobile-menu[aria-expanded="true"] span:nth-child(2){opacity:0}
+  .admin-mobile-menu[aria-expanded="true"] span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+  .admin-route-head>.logo-lockup{margin:0 auto 0 10px}
+  .admin-route-head>.top-actions{gap:5px}
   .admin-route-head .account-chip{padding:5px}
+  .admin-route-head .account-chip span:nth-child(2),.admin-route-head .account-chip b{display:none}
 
-  .admin-sidebar-backdrop{
-    display:block;position:fixed;inset:0;z-index:89;
-    border:0;background:rgba(0,5,6,.68);
-    backdrop-filter:blur(3px);
-  }
-  .admin-panel.standalone{overflow:visible}
-  .admin-layout{position:relative}
-  .admin-nav{
-    position:fixed;z-index:100;
-    left:8px;top:84px;bottom:10px;
-    width:min(286px,calc(100vw - 24px));
-    display:flex !important;flex-direction:column;
-    gap:7px !important;padding:14px 10px !important;
-    overflow-y:auto !important;overflow-x:hidden !important;
-    background:linear-gradient(180deg,#061012,#030708 72%,#020506);
-    border:1px solid #174a4d;border-radius:18px;
-    box-shadow:30px 25px 90px rgba(0,0,0,.58),0 0 35px rgba(29,232,220,.06);
-    transform:translateX(calc(-100% - 30px));
-    transition:transform .26s cubic-bezier(.22,.8,.2,1);
-  }
-  .admin-nav.open{transform:translateX(0)}
-  .admin-nav>button{
-    flex:0 0 auto;width:100%;min-height:50px !important;
-    display:grid !important;grid-template-columns:34px minmax(0,1fr) auto !important;
-    column-gap:12px !important;align-items:center;
-    padding:9px 11px !important;text-align:left !important;
-    font-size:9px !important;
-  }
-  .admin-nav>button span{
-    width:34px !important;height:34px !important;flex-basis:34px !important;
-  }
-  .admin-nav-bottom{
-    display:grid !important;gap:7px;margin-top:auto;padding-top:10px;
-    border-top:1px solid #12383b;
-  }
-  .admin-nav-bottom>*{width:100%}
+  .admin-nav-backdrop{display:block;position:fixed;z-index:75;inset:68px 0 0;border:0;background:rgba(0,3,4,.64);backdrop-filter:blur(3px);padding:0}
+  .admin-layout{display:block}
+  .admin-page-screen .admin-nav{position:fixed;z-index:80;left:0;top:68px;bottom:0;width:min(300px,88vw);height:auto;display:flex!important;flex-direction:column;align-items:stretch;gap:7px;padding:14px 12px 18px;border-right:1px solid rgba(48,213,207,.18);border-bottom:0;background:linear-gradient(180deg,#061012,#020708 75%);overflow-y:auto;overflow-x:hidden;transform:translateX(-105%);transition:transform .25s ease;box-shadow:30px 0 80px rgba(0,0,0,.48)}
+  .admin-page-screen .admin-nav.open{transform:translateX(0)}
+  .admin-page-screen .admin-nav>button{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;column-gap:12px;width:100%;min-height:50px;padding:10px 12px;border-radius:12px;text-align:left;font-size:9px}
+  .admin-page-screen .admin-nav>button span{width:34px;height:34px;flex-basis:34px;font-size:14px;border-radius:10px}
+  .admin-page-screen .admin-nav>button em{display:grid}
+  .admin-page-screen .admin-nav-bottom{margin-top:auto;display:grid;gap:8px;padding-top:12px;border-top:1px solid #123235}
+  .admin-page-screen .admin-nav-bottom>*{width:100%;min-height:42px}
+  .admin-content{min-height:calc(100vh - 150px);padding:15px 12px 100px}
+  .admin-panel.standalone{height:calc(100vh - 92px);min-height:0}
 
-  /* Product cards: never squeeze fields into the 75px thumbnail column. */
-  .product-admin-row{
-    display:flex !important;flex-direction:column !important;
-    gap:14px !important;padding:14px !important;
-    width:100%;
-  }
-  .product-admin-row>img{
-    width:100% !important;height:190px !important;
-    max-height:42vw;min-height:150px;object-fit:cover;
-  }
-  .product-admin-fields{width:100%;min-width:0}
-  .product-admin-fields input,.product-admin-fields textarea{width:100%;min-width:0}
-  .inline-fields{display:grid !important;grid-template-columns:1fr !important;gap:8px !important}
-  .pricing-admin{width:100%;overflow:hidden}
-  .pricing-admin-head{align-items:flex-start}
-  .pricing-option-row{
-    grid-template-columns:minmax(0,1fr) minmax(76px,.65fr) !important;
-    gap:7px !important;
-  }
-  .pricing-option-row input:nth-child(3){grid-column:1 / 2}
-  .pricing-option-row .danger-btn{grid-column:2;grid-row:2;height:40px}
-  .upload-small{width:100%;display:flex;justify-content:center}
-  .product-admin-row>.danger-btn{
-    grid-column:auto !important;justify-self:stretch !important;width:100% !important;
-  }
-  .admin-content{padding:14px !important;min-width:0;overflow-x:hidden}
-  .save-btn{position:sticky;bottom:8px;width:100%;margin-top:14px;z-index:12}
+  .profile-user-grid{grid-template-columns:1fr}
+  .profile-user-actions{grid-template-columns:1fr}
+  .user-profile-hero{align-items:flex-start}
 }
