@@ -11,7 +11,6 @@ import {
   onAuthStateChanged,
   signOut,
   doc,
-  getDoc,
   setDoc,
   updateDoc,
   onSnapshot,
@@ -456,127 +455,6 @@ export default function AdminPage() {
     }));
   }
 
-  async function compressProductImageForFirestore(file) {
-    if (!file) return '';
-
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-
-      reader.onload = () => {
-        const image = new Image();
-
-        image.onload = () => {
-          let width = Math.min(image.width, 1000);
-          let height = Math.round(image.height * (width / image.width));
-          let quality = 0.76;
-          let result = '';
-
-          const canvas = document.createElement('canvas');
-
-          const encode = () => {
-            canvas.width = width;
-            canvas.height = height;
-            const context = canvas.getContext('2d');
-
-            if (!context) {
-              reject(new Error('Could not process product image.'));
-              return;
-            }
-
-            context.clearRect(0, 0, width, height);
-            context.drawImage(image, 0, 0, width, height);
-            result = canvas.toDataURL('image/jpeg', quality);
-          };
-
-          encode();
-
-          while (result.length > 220000 && quality > 0.46) {
-            quality -= 0.06;
-            encode();
-          }
-
-          while (result.length > 220000 && width > 520) {
-            width = Math.round(width * 0.82);
-            height = Math.round(image.height * (width / image.width));
-            encode();
-          }
-
-          if (result.length > 260000) {
-            reject(new Error('Product image is too large. Please choose a smaller image.'));
-            return;
-          }
-
-          resolve(result);
-        };
-
-        image.onerror = () => reject(new Error('Could not read the product image.'));
-        image.src = String(reader.result);
-      };
-
-      reader.onerror = () => reject(new Error('Could not read the selected image.'));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function publishProductImage(index, imageUrl, imageData) {
-    if (!db || !isAdmin || !imageUrl || !imageData) {
-      throw new Error('Admin Firebase access is required to publish the image.');
-    }
-
-    const siteRef = doc(db, 'site', 'config');
-    const latestSnap = await getDoc(siteRef);
-    const latestData = latestSnap.exists() ? latestSnap.data() : {};
-    const cloudProducts = Array.isArray(latestData.products)
-      ? latestData.products.map((product) => ({ ...product }))
-      : [];
-
-    const currentProducts = cloudProducts.length
-      ? cloudProducts
-      : (Array.isArray(data.products) ? data.products.map((product) => ({ ...product })) : []);
-
-    if (!currentProducts[index]) {
-      throw new Error('Product no longer exists in Firebase. Refresh the admin page and try again.');
-    }
-
-    const imageVersion = Date.now();
-    currentProducts[index] = {
-      ...currentProducts[index],
-      image: imageUrl,
-      imageData,
-      imageVersion,
-    };
-
-    const firestoreData = sanitizeForFirestore({ products: currentProducts });
-
-    await setDoc(
-      siteRef,
-      {
-        products: firestoreData.products,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-
-    const verifySnap = await getDoc(siteRef);
-    const verifyProducts = verifySnap.exists() && Array.isArray(verifySnap.data()?.products)
-      ? verifySnap.data().products
-      : [];
-    const savedProduct = verifyProducts[index];
-
-    if (savedProduct?.image !== imageUrl || savedProduct?.imageData !== imageData) {
-      throw new Error('Image uploaded, but Firebase did not publish the new product image to site/config.');
-    }
-
-    setData((prev) => ({
-      ...prev,
-      products: prev.products.map((product, itemIndex) =>
-        itemIndex === index
-          ? { ...product, image: imageUrl, imageData, imageVersion }
-          : product
-      ),
-    }));
-  }
-
   function addPriceOption(index) {
     setData((prev) => ({
       ...prev,
@@ -645,7 +523,8 @@ export default function AdminPage() {
           priceOptions: [],
           duration: 'One-time',
           deliveryUrl: '',
-          image: '/panel-showcase.png',
+          image: '',
+          imageVersion: Date.now(),
         },
       ],
     }));
@@ -1886,7 +1765,6 @@ export default function AdminPage() {
 
                           <img
                             src={
-                              product.imageData ||
                               product.image ||
                               '/panel-showcase.png'
                             }
@@ -2060,25 +1938,26 @@ export default function AdminPage() {
                                 onChange={async (
                                   e
                                 ) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-
-                                  try {
-                                    const url = await uploadImage(file, 'products');
-                                    const imageData = await compressProductImageForFirestore(file);
-                                    await publishProductImage(index, url, imageData);
-
-                                    // Allow the same file to be selected again.
-                                    e.target.value = '';
-
-                                    flash(
-                                      'Image uploaded, published, and verified in Firebase.'
+                                  const url =
+                                    await uploadImage(
+                                      e.target
+                                        .files?.[0],
+                                      'products'
                                     );
-                                  } catch (publishError) {
-                                    console.error('Product image publish failed:', publishError);
+
+                                  if (url) {
+                                    updateProduct(
+                                      index,
+                                      {
+                                        image:
+                                          url,
+                                        imageVersion:
+                                          Date.now(),
+                                      }
+                                    );
+
                                     flash(
-                                      publishError?.message ||
-                                        'Image upload/publish failed.'
+                                      'Image uploaded. Click SAVE PRODUCTS to publish.'
                                     );
                                   }
                                 }}
