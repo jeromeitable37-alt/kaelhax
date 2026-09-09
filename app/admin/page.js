@@ -163,9 +163,13 @@ function mergeData(parsed) {
       ...((parsed || {}).stats || {}),
     },
 
+    productImages: {
+      ...((parsed || {}).productImages || {}),
+    },
+
     products: Array.isArray(parsed?.products)
-      ? parsed.products.map(normalizeProduct)
-      : DEFAULT.products.map(normalizeProduct),
+      ? parsed.products.map((product, index) => normalizeProduct(product, index))
+      : DEFAULT.products.map((product, index) => normalizeProduct(product, index)),
 
     faq: Array.isArray(parsed?.faq)
       ? parsed.faq
@@ -173,7 +177,7 @@ function mergeData(parsed) {
   };
 }
 
-function normalizeProduct(product) {
+function normalizeProduct(product, index = 0) {
   const priceOptions = Array.isArray(product?.priceOptions)
     ? product.priceOptions.filter(Boolean).map((option) => ({
         label: String(option?.label || 'OPTION').trim(),
@@ -184,6 +188,7 @@ function normalizeProduct(product) {
 
   return {
     ...product,
+    id: String(product?.id || `product-${index + 1}`),
     price: String(product?.price ?? 'FREE'),
     priceOptions,
   };
@@ -1952,60 +1957,93 @@ export default function AdminPage() {
                               <input
                                 type="file"
                                 accept="image/*"
-                                onChange={async (
-                                  e
-                                ) => {
-                                  const url =
-                                    await uploadImage(
-                                      e.target
-                                        .files?.[0],
-                                      'products'
-                                    );
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = '';
+                                  if (!file) return;
 
-                                  if (url) {
+                                  try {
+                                    setBusy(true);
+                                    const url = await uploadImage(file, 'products');
+                                    const productId = String(product.id || `product-${index + 1}`);
                                     const imageVersion = Date.now();
 
-                                    // Update the local product first.
-                                    updateProduct(
-                                      index,
-                                      {
-                                        image: url,
-                                        imageVersion,
-                                      }
-                                    );
+                                    const configRef = doc(db, 'site', 'config');
+                                    const { getDoc } = await import('firebase/firestore');
+                                    const snap = await getDoc(configRef);
+                                    const cloud = snap.exists() ? snap.data() : {};
+                                    const cloudProducts = Array.isArray(cloud?.products) ? cloud.products : [];
+                                    const cloudImages = cloud?.productImages && typeof cloud.productImages === 'object'
+                                      ? cloud.productImages
+                                      : {};
 
-                                    // Publish the image immediately as its own cloud update.
-                                    // This removes the dependency on the general Save button.
-                                    const nextProducts = data.products.map((product, itemIndex) =>
-                                      itemIndex === index
-                                        ? { ...product, image: url, imageVersion }
-                                        : product
-                                    );
+                                    // IMPORTANT: update the actual product.image field in Firestore
+                                    // using the latest cloud document. This prevents a stale React
+                                    // state value from putting /panel-showcase.png (or an empty value)
+                                    // back into the product after the upload.
+                                    const updatedProducts = cloudProducts.length
+                                      ? cloudProducts.map((cloudProduct, cloudIndex) => {
+                                          const cloudId = String(cloudProduct?.id || `product-${cloudIndex + 1}`);
+                                          const matches = cloudId === productId || cloudIndex === index;
+                                          return matches
+                                            ? {
+                                                ...cloudProduct,
+                                                id: productId,
+                                                image: url,
+                                                imageVersion,
+                                              }
+                                            : cloudProduct;
+                                        })
+                                      : data.products.map((currentProduct, currentIndex) =>
+                                          currentIndex === index
+                                            ? { ...currentProduct, id: productId, image: url, imageVersion }
+                                            : currentProduct
+                                        );
+
+                                    const nextProductImages = { ...cloudImages, [productId]: url };
 
                                     await setDoc(
-                                      doc(db, 'site', 'config'),
+                                      configRef,
                                       {
-                                        products: sanitizeForFirestore(nextProducts),
+                                        products: updatedProducts,
+                                        productImages: nextProductImages,
                                         updatedAt: serverTimestamp(),
                                       },
                                       { merge: true }
                                     );
 
-                                    const verifySnap = await (await import('firebase/firestore')).getDoc(
-                                      doc(db, 'site', 'config')
-                                    );
-                                    const verifyProducts = verifySnap.exists() ? verifySnap.data().products : null;
-                                    const verifiedImage = Array.isArray(verifyProducts)
-                                      ? verifyProducts[index]?.image
-                                      : null;
+                                    // Update the local product for the current admin screen too.
+                                    setData((prev) => ({
+                                      ...prev,
+                                      products: prev.products.map((currentProduct, currentIndex) =>
+                                        currentIndex === index
+                                          ? { ...currentProduct, id: productId, image: url, imageVersion }
+                                          : currentProduct
+                                      ),
+                                      productImages: {
+                                        ...(prev.productImages || {}),
+                                        [productId]: url,
+                                      },
+                                    }));
 
-                                    if (verifiedImage !== url) {
-                                      throw new Error('Image upload succeeded, but Firebase did not save the new product image URL.');
+                                    // Verify BOTH the actual product image field and the dedicated map.
+                                    const verifySnap = await getDoc(configRef);
+                                    const verifyData = verifySnap.exists() ? verifySnap.data() : null;
+                                    const verifyProducts = Array.isArray(verifyData?.products) ? verifyData.products : [];
+                                    const verifiedProduct = verifyProducts.find((item) => String(item?.id || '') === productId);
+                                    const verifiedUrl = String(verifiedProduct?.image || '');
+                                    const verifiedMapUrl = String(verifyData?.productImages?.[productId] || '');
+
+                                    if (verifiedUrl !== url || verifiedMapUrl !== url) {
+                                      throw new Error('Upload completed, but Firestore did not save the new image URL to the product.');
                                     }
 
-                                    flash(
-                                      'Product image uploaded and published to Firebase.'
-                                    );
+                                    flash('✓ Product image uploaded, saved, and verified.');
+                                  } catch (error) {
+                                    console.error('Product image publish failed:', error);
+                                    flash(error?.message || 'Product image upload failed.');
+                                  } finally {
+                                    setBusy(false);
                                   }
                                 }}
                               />

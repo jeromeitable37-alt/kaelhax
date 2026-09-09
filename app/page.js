@@ -258,10 +258,33 @@ function maskUsername(value) {
 function normalizeSiteData(
   parsed
 ) {
+  const productImages =
+    parsed?.productImages && typeof parsed.productImages === 'object'
+      ? parsed.productImages
+      : {};
+
+  const products = Array.isArray(parsed?.products)
+    ? parsed.products.map((product, index) => {
+        const id = String(product?.id || `product-${index + 1}`);
+        return {
+          ...product,
+          id,
+          image: String(productImages[id] || product?.image || ''),
+        };
+      })
+    : DEFAULT.products.map((product, index) => ({
+        ...product,
+        id: String(product?.id || `product-${index + 1}`),
+      }));
+
   return {
     ...DEFAULT,
 
     ...(parsed || {}),
+
+    productImages,
+
+    products,
 
     payment: {
       ...DEFAULT.payment,
