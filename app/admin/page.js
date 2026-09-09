@@ -512,62 +512,47 @@ export default function AdminPage() {
    */
 
  async function setOrderStatus(orderId, status) {
+  if (!isAdmin || !user) {
+    flash('Admin access is required.');
+    return;
+  }
+
+  if (!orderId) {
+    flash('Missing order ID.');
+    return;
+  }
+
+  if (status !== 'confirmed' && status !== 'rejected') {
+    flash('Invalid order status.');
+    return;
+  }
+
   try {
-    if (!orderId) {
-      throw new Error("Missing order ID.");
-    }
+    setBusy(true);
 
-    if (status !== "confirmed" && status !== "rejected") {
-      throw new Error("Invalid order status.");
-    }
-
-    if (!auth?.currentUser) {
-      throw new Error("You must be logged in.");
-    }
-
-    const idToken = await auth.currentUser.getIdToken(false);
+    const idToken = await user.getIdToken(false);
 
     if (!idToken) {
-      throw new Error("Unable to get Firebase ID token.");
+      throw new Error('Firebase authentication token is unavailable.');
     }
 
-    console.log(
-      `Updating order ${orderId} to ${status}...`
-    );
-
-    const response = await fetch("/api/admin/order", {
-      method: "POST",
+    const response = await fetch('/api/admin/order', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${idToken}`,
       },
-      body: JSON.stringify({
-        orderId,
-        status,
-      }),
+      body: JSON.stringify({ orderId, status }),
     });
 
     const responseText = await response.text();
-
-    let result;
+    let result = null;
 
     try {
-      result = responseText
-        ? JSON.parse(responseText)
-        : null;
-    } catch (parseError) {
-      console.error(
-        "API returned invalid JSON:",
-        parseError
-      );
-
-      console.error(
-        "Raw server response:",
-        responseText
-      );
-
+      result = responseText ? JSON.parse(responseText) : null;
+    } catch {
       throw new Error(
-        `Server returned invalid JSON (HTTP ${response.status}).`
+        `The server returned invalid JSON (HTTP ${response.status}).`
       );
     }
 
@@ -575,7 +560,7 @@ export default function AdminPage() {
       throw new Error(
         result?.error ||
           result?.message ||
-          `Order update failed (HTTP ${response.status}).`
+          `Could not update order (HTTP ${response.status}).`
       );
     }
 
@@ -583,62 +568,23 @@ export default function AdminPage() {
       throw new Error(
         result?.error ||
           result?.message ||
-          "Order update was unsuccessful."
+          'Could not update order.'
       );
     }
 
-    console.log(
-      "Order updated successfully:",
-      result
+    flash(
+      result.message ||
+        (status === 'confirmed'
+          ? 'Order confirmed successfully.'
+          : 'Order rejected successfully.')
     );
-
-    // Update the displayed order immediately.
-    if (typeof setOrders === "function") {
-      setOrders((currentOrders) =>
-        currentOrders.map((order) =>
-          order.id === orderId
-            ? {
-                ...order,
-                ...(result.order || {}),
-                status,
-              }
-            : order
-        )
-      );
-    }
-
-    const successMessage =
-      result?.message ||
-      (status === "confirmed"
-        ? "Order confirmed successfully."
-        : "Order rejected successfully.");
-
-    console.log(successMessage);
-
-    // Use your existing flash function if available.
-    if (typeof flash === "function") {
-      flash(successMessage);
-    }
-
-    return result;
   } catch (error) {
-    console.error("Order update failed:", error);
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error || "Unknown error.");
-
-    if (typeof flash === "function") {
-      flash(`Order update failed: ${message}`);
-    }
-
-    return {
-      ok: false,
-      error: message,
-    };
+    console.error('Order status error:', error);
+    flash(error?.message || 'Could not update order.');
+  } finally {
+    setBusy(false);
   }
-}
+ }
 
   /*
    * ---------------------------------------------------------
@@ -1987,7 +1933,7 @@ export default function AdminPage() {
                                     disabled={busy}
                                     onClick={() =>
                                       setOrderStatus(
-                                        order,
+                                        order.id,
                                         'confirmed'
                                       )
                                     }
@@ -2001,7 +1947,7 @@ export default function AdminPage() {
                                     disabled={busy}
                                     onClick={() =>
                                       setOrderStatus(
-                                        order,
+                                        order.id,
                                         'rejected'
                                       )
                                     }

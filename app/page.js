@@ -2458,106 +2458,57 @@ export default function Home() {
    * =========================================================
    */
 
-  async function notifyTelegram(
-    order
-  ) {
+  async function notifyTelegram(order) {
     try {
-      const controller =
-        new AbortController();
+      if (!auth?.currentUser) {
+        console.warn('Telegram notification skipped: user is not signed in.');
+        return false;
+      }
 
-      const timeout =
-        setTimeout(
-          () =>
-            controller.abort(),
-          8000
-        );
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
 
-      const response =
-        await fetch(
-          '/api/telegram/order',
-          {
-            method:
-              'POST',
+      let idToken;
+      try {
+        idToken = await auth.currentUser.getIdToken(false);
+      } catch (error) {
+        clearTimeout(timeout);
+        console.error('Could not get Firebase ID token for Telegram notification:', error);
+        return false;
+      }
 
-            headers: {
-              'Content-Type':
-                'application/json',
-            },
+      const response = await fetch('/api/telegram/order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          orderId: order.id,
+        }),
+        signal: controller.signal,
+      });
 
-            body:
-              JSON.stringify({
-                orderId:
-                  order.id,
+      clearTimeout(timeout);
 
-                userId:
-                  order.userId,
-
-                userEmail:
-                  order.userEmail,
-
-                usernameMasked:
-                  order.usernameMasked,
-
-                productName:
-                  order.productName,
-
-                duration:
-                  order.duration,
-
-                amount:
-                  order.amount,
-
-                paymentReference:
-                  order.paymentReference,
-
-                /*
-                 * Send receipt data to your
-                 * Telegram endpoint too.
-                 */
-                receiptData:
-                  order.receiptData,
-
-                deliveryUrl:
-                  order.deliveryUrl,
-              }),
-
-            signal:
-              controller.signal,
-          }
-        );
-
-      clearTimeout(
-        timeout
-      );
-
-      let result =
-        null;
+      const responseText = await response.text();
+      let result = null;
 
       try {
-        result =
-          await response.json();
-      } catch {}
+        result = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        console.error('Telegram endpoint returned invalid JSON:', responseText);
+        return false;
+      }
 
-      if (
-        !response.ok
-      ) {
-        console.error(
-          'Telegram notification failed:',
-          result
-        );
-
+      if (!response.ok || !result?.ok) {
+        console.error('Telegram notification failed:', result);
         return false;
       }
 
       return true;
-    } catch (
-      error
-    ) {
-      console.error(
-        'Telegram notification failed:',
-        error
-      );
-
+    } catch (error) {
+      console.error('Telegram notification failed:', error);
       return false;
     }
   }
