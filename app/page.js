@@ -270,6 +270,7 @@ function normalizeSiteData(
           ...product,
           id,
           image: String(productImages[id] || product?.image || ''),
+          imageData: String(product?.imageData || ''),
         };
       })
     : DEFAULT.products.map((product, index) => ({
@@ -3701,15 +3702,21 @@ export default function Home() {
 
                   <div className="product-image">
 
-                    {product.image ? (
+                    {product.imageData || product.image ? (
                       <img
-                        key={`${product.image}-${product.imageVersion || ''}`}
-                        src={product.image}
+                        key={`${product.imageData || product.image}-${product.imageVersion || ''}`}
+                        src={product.imageData || product.image}
                         alt={product.name}
                         loading={index < 3 ? 'eager' : 'lazy'}
                         onError={(event) => {
-                          event.currentTarget.style.display = 'none';
-                          event.currentTarget.parentElement?.classList.add('image-load-error');
+                          const img = event.currentTarget;
+                          if (product.imageData && img.dataset.fallback !== 'url' && product.image) {
+                            img.dataset.fallback = 'url';
+                            img.src = product.image;
+                            return;
+                          }
+                          img.style.display = 'none';
+                          img.parentElement?.classList.add('image-load-error');
                         }}
                       />
                     ) : (

@@ -647,18 +647,65 @@ export default function AdminPage() {
     }
   }
 
+  async function compressProductImage(file) {
+    if (!file) return '';
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const image = new Image();
+        image.onload = () => {
+          const maxWidth = 768;
+          const scale = Math.min(1, maxWidth / image.width);
+          const width = Math.max(1, Math.round(image.width * scale));
+          const height = Math.max(1, Math.round(image.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Could not process product image.'));
+            return;
+          }
+          ctx.drawImage(image, 0, 0, width, height);
+
+          let quality = 0.58;
+          let result = canvas.toDataURL('image/jpeg', quality);
+          while (result.length > 90000 && quality > 0.35) {
+            quality -= 0.05;
+            result = canvas.toDataURL('image/jpeg', quality);
+          }
+
+          if (result.length > 120000) {
+            reject(new Error('Product image is too large after compression.'));
+            return;
+          }
+
+          resolve(result);
+        };
+        image.onerror = () => reject(new Error('Could not read the product image.'));
+        image.src = String(reader.result);
+      };
+      reader.onerror = () => reject(new Error('Could not read the product image file.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function publishProductImage(index, file) {
     if (!file || !db || !isAdmin) return;
     setUploadingProductIndex(index);
     const previewUrl = URL.createObjectURL(file);
     try {
       updateProduct(index, { image: previewUrl, imageVersion: Date.now() });
-      const url = await uploadImage(file, 'products');
+      const [url, imageData] = await Promise.all([
+        uploadImage(file, 'products'),
+        compressProductImage(file),
+      ]);
       const current = data.products[index] || {};
       const productId = String(current.id || `product-${index + 1}`);
       const imageVersion = Date.now();
       const updatedProducts = data.products.map((item, i) =>
-        i === index ? { ...item, id: productId, image: url, imageVersion } : item
+        i === index ? { ...item, id: productId, image: url, imageData, imageVersion } : item
       );
       const updatedProductImages = { ...(data.productImages || {}), [productId]: url };
       await withTimeout(
@@ -674,7 +721,7 @@ export default function AdminPage() {
         ...prev,
         productImages: updatedProductImages,
         products: prev.products.map((item, i) =>
-          i === index ? { ...item, id: productId, image: url, imageVersion } : item
+          i === index ? { ...item, id: productId, image: url, imageData, imageVersion } : item
         ),
       }));
       flash('✓ Product image uploaded and published.');
