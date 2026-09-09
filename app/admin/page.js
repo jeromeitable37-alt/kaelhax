@@ -1955,6 +1955,9 @@ export default function AdminPage() {
                                       }
                                     );
 
+                                    // Allow the same file to be selected again.
+                                    e.target.value = '';
+
                                     flash(
                                       'Image uploaded. Save to publish.'
                                     );

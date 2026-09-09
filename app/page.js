@@ -289,7 +289,18 @@ function normalizeSiteData(
       Array.isArray(
         parsed?.products
       )
-        ? parsed.products
+        ? parsed.products.map((product) => ({
+            ...product,
+            price: String(product?.price ?? 'FREE'),
+            priceOptions: Array.isArray(product?.priceOptions)
+              ? product.priceOptions.filter(Boolean).map((option) => ({
+                  label: String(option?.label || 'OPTION').trim(),
+                  price: String(option?.price || '').trim(),
+                  slots: String(option?.slots || '').trim(),
+                }))
+              : [],
+            imageVersion: product?.imageVersion || product?.image || '',
+          }))
         : DEFAULT.products,
 
     faq:
@@ -631,6 +642,24 @@ export default function Home() {
 
   useEffect(() => {
     try {
+      // Firebase is the production source of truth. Only use localStorage
+      // when Firebase is unavailable, otherwise an old local image can
+      // temporarily overwrite the freshly published cloud image.
+      if (firebaseConfigured) {
+        const session =
+          localStorage.getItem(
+            SESSION_KEY
+          );
+
+        if (session) {
+          setLocalSession(
+            JSON.parse(session)
+          );
+        }
+
+        return;
+      }
+
       const raw =
         localStorage.getItem(
           STORAGE_KEY
@@ -3556,10 +3585,15 @@ export default function Home() {
                   <div className="product-image">
 
                     <img
+                      key={`${product.name}-${product.imageVersion || product.image || 'default-image'}`}
                       src={product.image || '/panel-showcase.png'}
                       alt={product.name}
                       loading={index < 3 ? 'eager' : 'lazy'}
-                      onError={(event) => { event.currentTarget.src = '/panel-showcase.png'; }}
+                      decoding="async"
+                      onError={(event) => {
+                        event.currentTarget.onerror = null;
+                        event.currentTarget.src = '/panel-showcase.png';
+                      }}
                     />
 
                     <div className="image-overlay">
