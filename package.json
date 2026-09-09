@@ -1,7 +1,7 @@
 {
   "name": "kaelhax-nexorium-site",
   "private": true,
-  "version": "1.2.4",
+  "version": "1.2.1",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
