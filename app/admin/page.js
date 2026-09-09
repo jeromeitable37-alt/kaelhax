@@ -508,25 +508,23 @@ export default function AdminPage() {
   }
 
   function addProduct() {
+    const newProduct = {
+      id: crypto.randomUUID(),
+      name: 'New NEXORIUM Product',
+      version: 'NEW',
+      status: 'READY',
+      desc: 'Add a description.',
+      price: 'FREE',
+      priceOptions: [],
+      duration: 'One-time',
+      deliveryUrl: '',
+      image: '',
+      imageVersion: Date.now(),
+    };
+
     setData((prev) => ({
       ...prev,
-
-      products: [
-        ...prev.products,
-
-        {
-          name: 'New NEXORIUM Product',
-          version: 'NEW',
-          status: 'READY',
-          desc: 'Add a description.',
-          price: 'FREE',
-          priceOptions: [],
-          duration: 'One-time',
-          deliveryUrl: '',
-          image: '',
-          imageVersion: Date.now(),
-        },
-      ],
+      products: [...prev.products, newProduct],
     }));
 
     setTab('products');
@@ -554,7 +552,7 @@ export default function AdminPage() {
 
   async function uploadImage(file, folder) {
     if (!file || !storage || !me) {
-      return '';
+      throw new Error('Firebase Storage is not available for this upload.');
     }
 
     const safeName = file.name.replace(
@@ -569,11 +567,14 @@ export default function AdminPage() {
 
     await uploadBytes(objectRef, file, {
       contentType: file.type || 'image/jpeg',
-      cacheControl: 'public,max-age=3600,must-revalidate',
+      cacheControl: 'public,max-age=31536000,immutable',
     });
 
     const url = await getDownloadURL(objectRef);
-    return `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
+
+    // Return the canonical Firebase Storage URL. The unique object path is
+    // already enough to prevent collisions, so no query-string tricks are needed.
+    return url;
   }
 
   /*
@@ -601,9 +602,25 @@ export default function AdminPage() {
         }
       );
 
-      flash(
-        'Site changes published to Firebase.'
+      // Read the document back so the admin UI can confirm the actual cloud value.
+      // This prevents a misleading "saved" message when the document still contains
+      // an old image path.
+      const savedSnap = await (await import('firebase/firestore')).getDoc(
+        doc(db, 'site', 'config')
       );
+      const saved = savedSnap.exists() ? savedSnap.data() : null;
+      const expectedImages = data.products.map((p) => String(p?.image || ''));
+      const savedImages = Array.isArray(saved?.products)
+        ? saved.products.map((p) => String(p?.image || ''))
+        : [];
+      const verified = expectedImages.every((value, index) => value === savedImages[index]);
+
+      if (!verified) {
+        console.error('Firebase verification mismatch', { expectedImages, savedImages });
+        throw new Error('Firebase saved an older product image value. Please retry the image upload.');
+      }
+
+      flash('Site changes published and verified in Firebase.');
     } catch (error) {
       console.error(
         'Failed to save site:',
@@ -1946,18 +1963,48 @@ export default function AdminPage() {
                                     );
 
                                   if (url) {
+                                    const imageVersion = Date.now();
+
+                                    // Update the local product first.
                                     updateProduct(
                                       index,
                                       {
-                                        image:
-                                          url,
-                                        imageVersion:
-                                          Date.now(),
+                                        image: url,
+                                        imageVersion,
                                       }
                                     );
 
+                                    // Publish the image immediately as its own cloud update.
+                                    // This removes the dependency on the general Save button.
+                                    const nextProducts = data.products.map((product, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...product, image: url, imageVersion }
+                                        : product
+                                    );
+
+                                    await setDoc(
+                                      doc(db, 'site', 'config'),
+                                      {
+                                        products: sanitizeForFirestore(nextProducts),
+                                        updatedAt: serverTimestamp(),
+                                      },
+                                      { merge: true }
+                                    );
+
+                                    const verifySnap = await (await import('firebase/firestore')).getDoc(
+                                      doc(db, 'site', 'config')
+                                    );
+                                    const verifyProducts = verifySnap.exists() ? verifySnap.data().products : null;
+                                    const verifiedImage = Array.isArray(verifyProducts)
+                                      ? verifyProducts[index]?.image
+                                      : null;
+
+                                    if (verifiedImage !== url) {
+                                      throw new Error('Image upload succeeded, but Firebase did not save the new product image URL.');
+                                    }
+
                                     flash(
-                                      'Image uploaded. Click SAVE PRODUCTS to publish.'
+                                      'Product image uploaded and published to Firebase.'
                                     );
                                   }
                                 }}

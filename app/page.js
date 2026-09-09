@@ -289,8 +289,14 @@ function normalizeSiteData(
       Array.isArray(
         parsed?.products
       )
-        ? parsed.products
-        : DEFAULT.products,
+        ? parsed.products.map((product, index) => ({
+            ...product,
+            id: product?.id || `product-${index}-${String(product?.name || 'item').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          }))
+        : DEFAULT.products.map((product, index) => ({
+            ...product,
+            id: `product-${index}-${String(product?.name || 'item').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          })),
 
     faq:
       Array.isArray(
