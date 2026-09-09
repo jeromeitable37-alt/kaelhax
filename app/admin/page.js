@@ -13,7 +13,6 @@ import {
   doc,
   setDoc,
   updateDoc,
-  updateProfile,
   onSnapshot,
   collection,
   serverTimestamp,
@@ -100,15 +99,46 @@ const DEFAULT = {
 };
 
 const ADMIN_TABS = [
-  ['overview', '⌂', 'Overview'],
+  ['overview', '◈', 'Overview'],
   ['content', '✦', 'Content'],
   ['products', '▦', 'Products'],
   ['payments', '₱', 'Payments'],
   ['orders', '◉', 'Orders'],
-  ['accounts', '♙', 'Users'],
-  ['profile', '◎', 'Profile'],
+  ['accounts', '◎', 'Users'],
+  ['profile', '●', 'Profile'],
   ['settings', '⚙', 'Settings'],
 ];
+
+function sanitizeForFirestore(value, nestedArray = false) {
+  if (Array.isArray(value)) {
+    if (nestedArray) {
+      return Object.fromEntries(
+        value.map((item, index) => [
+          String(index),
+          sanitizeForFirestore(item, false),
+        ])
+      );
+    }
+
+    return value.map((item) =>
+      Array.isArray(item)
+        ? sanitizeForFirestore(item, true)
+        : sanitizeForFirestore(item, false)
+    );
+  }
+
+  if (value && typeof value === 'object') {
+    const output = {};
+
+    for (const [key, item] of Object.entries(value)) {
+      output[key] = sanitizeForFirestore(item, false);
+    }
+
+    return output;
+  }
+
+  return value;
+}
 
 function mergeData(parsed) {
   return {
@@ -155,10 +185,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
 
   const [tab, setTab] = useState('overview');
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [motionReduced, setMotionReduced] = useState(false);
   const [message, setMessage] = useState('');
 
   const [qrPreview, setQrPreview] = useState(
@@ -183,11 +210,6 @@ export default function AdminPage() {
       'kaelhax-theme-v1'
     );
 
-    const storedMotion = localStorage.getItem('kaelhax-admin-motion-v1');
-    const reduced = storedMotion === 'reduced';
-    setMotionReduced(reduced);
-    document.documentElement.dataset.motion = reduced ? 'reduced' : 'full';
-
     const next =
       stored === 'light' || stored === 'dark'
         ? stored
@@ -209,14 +231,6 @@ export default function AdminPage() {
       );
     } catch {}
   }, [theme]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    document.documentElement.dataset.motion = motionReduced ? 'reduced' : 'full';
-    try {
-      localStorage.setItem('kaelhax-admin-motion-v1', motionReduced ? 'reduced' : 'full');
-    } catch {}
-  }, [motionReduced]);
 
   /*
    * ---------------------------------------------------------
@@ -486,80 +500,6 @@ export default function AdminPage() {
 
   /*
    * ---------------------------------------------------------
-   * PROFILE
-   * ---------------------------------------------------------
-   */
-
-  async function changeProfilePhoto(file) {
-    if (!file || !me || !storage || !db) return;
-
-    if (!file.type.startsWith('image/')) {
-      flash('Please select an image file.');
-      return;
-    }
-
-    if (file.size > 4 * 1024 * 1024) {
-      flash('Profile picture must be 4 MB or smaller.');
-      return;
-    }
-
-    setProfileBusy(true);
-
-    try {
-      const url = await uploadImage(file, 'profiles');
-
-      if (!url) {
-        throw new Error('Could not upload profile picture.');
-      }
-
-      await updateProfile(me, {
-        photoURL: url,
-      });
-
-      await setDoc(
-        doc(db, 'users', me.uid),
-        {
-          photoURL: url,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      setProfile((prev) => ({
-        ...(prev || {}),
-        photoURL: url,
-      }));
-
-      flash('Profile picture updated.');
-    } catch (error) {
-      console.error('Profile picture update failed:', error);
-      flash(error?.message || 'Profile picture update failed.');
-    } finally {
-      setProfileBusy(false);
-    }
-  }
-
-  async function resetPassword() {
-    if (!auth || !me?.email) {
-      flash('No email address is available for password reset.');
-      return;
-    }
-
-    setProfileBusy(true);
-
-    try {
-      await sendPasswordResetEmail(auth, me.email);
-      flash('Password reset email sent. Check your inbox.');
-    } catch (error) {
-      console.error('Password reset failed:', error);
-      flash(error?.message || 'Could not send password reset email.');
-    } finally {
-      setProfileBusy(false);
-    }
-  }
-
-  /*
-   * ---------------------------------------------------------
    * SAVE SITE
    * ---------------------------------------------------------
    */
@@ -570,10 +510,12 @@ export default function AdminPage() {
     setBusy(true);
 
     try {
+      const firestoreData = sanitizeForFirestore(data);
+
       await setDoc(
         doc(db, 'site', 'config'),
         {
-          ...data,
+          ...firestoreData,
           updatedAt: serverTimestamp(),
         },
         {
@@ -605,70 +547,89 @@ export default function AdminPage() {
    * ---------------------------------------------------------
    */
 
-  async function setOrderStatus(orderId, status) {
+ async function setOrderStatus(orderId, status) {
+  try {
     if (!orderId) {
-      flash('Missing order ID.');
-      return { ok: false, error: 'Missing order ID.' };
+      throw new Error("Missing order ID.");
     }
 
-    if (status !== 'confirmed' && status !== 'rejected') {
-      flash('Invalid order status.');
-      return { ok: false, error: 'Invalid order status.' };
+    if (status !== "confirmed" && status !== "rejected") {
+      throw new Error("Invalid order status.");
     }
 
     if (!auth?.currentUser) {
-      flash('You must be logged in.');
-      return { ok: false, error: 'You must be logged in.' };
+      throw new Error("You must be logged in.");
     }
 
-    setBusy(true);
+    const idToken = await auth.currentUser.getIdToken(false);
+
+    if (!idToken) {
+      throw new Error("Unable to get Firebase ID token.");
+    }
+
+    console.log(
+      `Updating order ${orderId} to ${status}...`
+    );
+
+    const response = await fetch("/api/admin/order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        orderId,
+        status,
+      }),
+    });
+
+    const responseText = await response.text();
+
+    let result;
 
     try {
-      const idToken = await auth.currentUser.getIdToken(false);
+      result = responseText
+        ? JSON.parse(responseText)
+        : null;
+    } catch (parseError) {
+      console.error(
+        "API returned invalid JSON:",
+        parseError
+      );
 
-      if (!idToken) {
-        throw new Error('Unable to get Firebase ID token.');
-      }
+      console.error(
+        "Raw server response:",
+        responseText
+      );
 
-      const response = await fetch('/api/admin/order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          orderId,
-          status,
-        }),
-      });
+      throw new Error(
+        `Server returned invalid JSON (HTTP ${response.status}).`
+      );
+    }
 
-      const responseText = await response.text();
-      let result = null;
-
-      try {
-        result = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        throw new Error(
-          `Server returned invalid JSON (HTTP ${response.status}).`
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          result?.error ||
+    if (!response.ok) {
+      throw new Error(
+        result?.error ||
           result?.message ||
           `Order update failed (HTTP ${response.status}).`
-        );
-      }
+      );
+    }
 
-      if (!result?.ok) {
-        throw new Error(
-          result?.error ||
+    if (!result?.ok) {
+      throw new Error(
+        result?.error ||
           result?.message ||
-          'Order update was unsuccessful.'
-        );
-      }
+          "Order update was unsuccessful."
+      );
+    }
 
+    console.log(
+      "Order updated successfully:",
+      result
+    );
+
+    // Update the displayed order immediately.
+    if (typeof setOrders === "function") {
       setOrders((currentOrders) =>
         currentOrders.map((order) =>
           order.id === orderId
@@ -680,23 +641,67 @@ export default function AdminPage() {
             : order
         )
       );
+    }
 
-      const successMessage =
-        result?.message ||
-        (status === 'confirmed'
-          ? 'Order confirmed successfully.'
-          : 'Order rejected successfully.');
+    const successMessage =
+      result?.message ||
+      (status === "confirmed"
+        ? "Order confirmed successfully."
+        : "Order rejected successfully.");
 
+    console.log(successMessage);
+
+    // Use your existing flash function if available.
+    if (typeof flash === "function") {
       flash(successMessage);
-      return result;
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Order update failed:", error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error || "Unknown error.");
+
+    if (typeof flash === "function") {
+      flash(`Order update failed: ${message}`);
+    }
+
+    return {
+      ok: false,
+      error: message,
+    };
+  }
+}
+
+  /*
+   * ---------------------------------------------------------
+   * CHANGE USER ROLE
+   * ---------------------------------------------------------
+   */
+
+  async function setUserRole(userId, role) {
+    if (!db || !isAdmin || !userId) return;
+
+    const nextRole = role === 'admin' ? 'admin' : 'member';
+    setBusy(true);
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        role: nextRole,
+        updatedAt: serverTimestamp(),
+      });
+
+      flash(
+        nextRole === 'admin'
+          ? 'User promoted to admin.'
+          : 'User changed to member.'
+      );
     } catch (error) {
-      console.error('Order update failed:', error);
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : String(error || 'Unknown error.');
-      flash(`Order update failed: ${errorMessage}`);
-      return { ok: false, error: errorMessage };
+      console.error('Failed to update user role:', error);
+      flash(error?.message || 'Could not change user role.');
     } finally {
       setBusy(false);
     }
@@ -738,6 +743,72 @@ export default function AdminPage() {
         error?.message ||
           'Could not update account.'
       );
+    }
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * PROFILE
+   * ---------------------------------------------------------
+   */
+
+  async function uploadProfilePicture(file) {
+    if (!file || !storage || !me || !isAdmin) return;
+
+    setBusy(true);
+
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const objectRef = ref(
+        storage,
+        `profiles/${me.uid}/${Date.now()}-${safeName}`
+      );
+
+      await uploadBytes(objectRef, file, {
+        contentType: file.type || 'image/*',
+      });
+
+      const url = await getDownloadURL(objectRef);
+
+      const { updateProfile } = await import('firebase/auth');
+      await updateProfile(me, { photoURL: url });
+
+      await updateDoc(doc(db, 'users', me.uid), {
+        photoURL: url,
+        updatedAt: serverTimestamp(),
+      });
+
+      setProfile((prev) => ({
+        ...(prev || {}),
+        photoURL: url,
+      }));
+
+      flash('Profile picture updated.');
+    } catch (error) {
+      console.error('Profile picture upload failed:', error);
+      flash(error?.message || 'Profile picture upload failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword() {
+    const email = me?.email;
+    if (!email || !auth) {
+      flash('No email address is available for this account.');
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      flash(`Password reset email sent to ${email}.`);
+    } catch (error) {
+      console.error('Password reset failed:', error);
+      flash(error?.message || 'Could not send password reset email.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1093,18 +1164,6 @@ export default function AdminPage() {
       {/* TOP HEADER */}
       <header className="admin-route-head">
 
-        <button
-          className="admin-mobile-menu"
-          type="button"
-          aria-label="Open admin navigation"
-          aria-expanded={mobileNavOpen}
-          onClick={() => setMobileNavOpen((value) => !value)}
-        >
-          <span />
-          <span />
-          <span />
-        </button>
-
         <a
           href="/"
           className="logo-lockup"
@@ -1162,24 +1221,17 @@ export default function AdminPage() {
 
           <button
             className="account-chip"
-            onClick={() => {
-              setTab('profile');
-              setMobileNavOpen(false);
-            }}
+            onClick={doLogout}
             type="button"
-            title="Open admin profile"
           >
-            <span className="account-avatar account-avatar-photo">
-              {profile?.photoURL || me.photoURL ? (
-                <img
-                  src={profile?.photoURL || me.photoURL}
-                  alt="Profile"
-                />
-              ) : (
-                (me.displayName || me.email || 'A')
-                  .slice(0, 1)
-                  .toUpperCase()
-              )}
+            <span className="account-avatar">
+              {(
+                me.displayName ||
+                me.email ||
+                'A'
+              )
+                .slice(0, 1)
+                .toUpperCase()}
             </span>
 
             <span>
@@ -1246,32 +1298,7 @@ export default function AdminPage() {
           <div className="admin-layout">
 
             {/* NAVIGATION */}
-            {mobileNavOpen && (
-              <button
-                className="admin-nav-backdrop"
-                type="button"
-                aria-label="Close admin navigation"
-                onClick={() => setMobileNavOpen(false)}
-              />
-            )}
-
-            <nav className={`admin-nav ${mobileNavOpen ? 'open' : ''}`}>
-
-              <div className="admin-nav-brand">
-                <span className="admin-nav-brand-dot" />
-                <div>
-                  <b>CONTROL</b>
-                  <small>ADMIN CONSOLE</small>
-                </div>
-                <button
-                  className="admin-nav-close"
-                  type="button"
-                  aria-label="Close navigation"
-                  onClick={() => setMobileNavOpen(false)}
-                >
-                  ×
-                </button>
-              </div>
+            <nav className="admin-nav">
 
               {ADMIN_TABS.map(
                 ([key, icon, label]) => (
@@ -1283,10 +1310,9 @@ export default function AdminPage() {
                         ? 'active'
                         : ''
                     }
-                    onClick={() => {
-                      setTab(key);
-                      setMobileNavOpen(false);
-                    }}
+                    onClick={() =>
+                      setTab(key)
+                    }
                   >
                     <span>
                       {icon}
@@ -2275,68 +2301,39 @@ export default function AdminPage() {
                       <span className="eyebrow">// ADMIN PROFILE</span>
                       <h3>Profile & Security</h3>
                     </div>
-                    <span className="admin-pill">ADMIN ACCOUNT</span>
                   </div>
 
                   <div className="profile-card-admin profile-card-enhanced">
-                    <div className="profile-big profile-big-photo">
-                      {profile?.photoURL || me?.photoURL ? (
-                        <img
-                          src={profile?.photoURL || me.photoURL}
-                          alt="Admin profile"
-                        />
+                    <div className="profile-big">
+                      {profile?.photoURL ? (
+                        <img src={profile.photoURL} alt="Profile" />
                       ) : (
                         (me?.displayName || me?.email || 'A').slice(0, 1).toUpperCase()
                       )}
                     </div>
-
                     <div>
-                      <b>{me?.displayName || profile?.displayName || 'Administrator'}</b>
-                      <span>{me?.email || profile?.email || 'No email'}</span>
-                      <small>ROOT ADMIN • FIREBASE AUTHENTICATED</small>
+                      <b>{me?.displayName || 'Administrator'}</b>
+                      <span>{me?.email || 'No email'}</span>
+                      <small>ADMIN ACCOUNT</small>
                     </div>
-
-                    <label className="upload-profile-btn">
-                      {profileBusy ? 'UPDATING…' : 'CHANGE PHOTO'}
+                    <label className="outline-btn profile-upload-btn">
+                      CHANGE PHOTO
                       <input
                         type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        disabled={profileBusy}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file) changeProfilePhoto(file);
-                          event.target.value = '';
-                        }}
+                        accept="image/*"
+                        onChange={(event) => uploadProfilePicture(event.target.files?.[0])}
                       />
                     </label>
                   </div>
 
-                  <div className="profile-detail-grid">
-                    <div className="admin-note profile-detail-card">
-                      <span className="eyebrow">ACCOUNT</span>
-                      <b>{me?.email || 'No email'}</b>
-                      <small>Firebase account connected to this admin console.</small>
-                    </div>
-                    <div className="admin-note profile-detail-card">
-                      <span className="eyebrow">ROLE</span>
-                      <b>ADMIN</b>
-                      <small>Access is controlled by the Firestore users/{me?.uid} document.</small>
-                    </div>
-                  </div>
-
-                  <div className="security-card">
+                  <div className="security-card-admin">
                     <div>
-                      <span className="eyebrow">// PASSWORD SECURITY</span>
-                      <h4>Reset your password</h4>
-                      <p>We'll send a password-reset link to your Firebase email address.</p>
+                      <span className="eyebrow">// ACCOUNT SECURITY</span>
+                      <h4>Password</h4>
+                      <p>Send a secure password-reset email to the current administrator account.</p>
                     </div>
-                    <button
-                      className="outline-btn big"
-                      type="button"
-                      disabled={profileBusy}
-                      onClick={resetPassword}
-                    >
-                      SEND RESET LINK
+                    <button className="primary-btn" type="button" onClick={resetPassword} disabled={busy}>
+                      {busy ? 'PROCESSING…' : 'RESET PASSWORD'}
                     </button>
                   </div>
                 </div>
@@ -2349,62 +2346,26 @@ export default function AdminPage() {
                 <div className="admin-page">
                   <div className="admin-section-title">
                     <div>
-                      <span className="eyebrow">// CONSOLE SETTINGS</span>
+                      <span className="eyebrow">// CONSOLE PREFERENCES</span>
                       <h3>Settings</h3>
                     </div>
-                    <span className="admin-pill">LOCAL PREFERENCES</span>
                   </div>
 
                   <div className="settings-grid-admin">
-                    <div className="setting-card-admin">
-                      <div>
-                        <b>Appearance</b>
-                        <span>Switch between the dark and light console themes.</span>
-                      </div>
-                      <button
-                        className="outline-btn"
-                        type="button"
-                        onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}
-                      >
-                        {theme === 'dark' ? 'DARK MODE' : 'LIGHT MODE'}
-                      </button>
-                    </div>
-
-                    <div className="setting-card-admin">
-                      <div>
-                        <b>Motion effects</b>
-                        <span>Reduce animated glow and transitions on the admin console.</span>
-                      </div>
-                      <button
-                        className={`settings-toggle ${motionReduced ? 'active' : ''}`}
-                        type="button"
-                        aria-pressed={motionReduced}
-                        onClick={() => setMotionReduced((value) => !value)}
-                      >
-                        <span />
-                        {motionReduced ? 'REDUCED' : 'FULL'}
-                      </button>
-                    </div>
-
-                    <div className="setting-card-admin">
-                      <div>
-                        <b>Order review</b>
-                        <span>Confirmations and rejections are sent through the protected admin API.</span>
-                      </div>
-                      <span className="settings-status">SECURE API</span>
-                    </div>
-
-                    <div className="setting-card-admin">
-                      <div>
-                        <b>Storefront</b>
-                        <span>Open the public storefront without leaving your admin session.</span>
-                      </div>
-                      <a className="outline-btn" href="/">OPEN STORE</a>
-                    </div>
+                    <button className="settings-card-admin" type="button" onClick={() => setTheme((value) => value === 'dark' ? 'light' : 'dark')}>
+                      <span>DISPLAY THEME</span>
+                      <b>{theme.toUpperCase()}</b>
+                      <small>Switch the admin console appearance.</small>
+                    </button>
+                    <button className="settings-card-admin" type="button" onClick={() => setTab('orders')}>
+                      <span>ORDER QUEUE</span>
+                      <b>{pending} PENDING</b>
+                      <small>Open the verification queue.</small>
+                    </button>
                   </div>
 
-                  <div className="admin-note settings-note">
-                    Console preferences are stored locally in this browser. Firebase remains the source of truth for your account, orders, products, and published site configuration.
+                  <div className="admin-note">
+                    Firebase remains the source of truth for roles, orders, products, and published storefront content.
                   </div>
                 </div>
               )}
