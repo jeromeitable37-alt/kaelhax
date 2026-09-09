@@ -212,10 +212,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
 
   const [tab, setTab] = useState('overview');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [savingProducts, setSavingProducts] = useState(false);
-  const [uploadingProductImage, setUploadingProductImage] = useState(false);
-  const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
   const [message, setMessage] = useState('');
 
   const [qrPreview, setQrPreview] = useState(
@@ -261,6 +259,18 @@ export default function AdminPage() {
       );
     } catch {}
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleResize = () => {
+      if (window.innerWidth > 760) setMobileNavOpen(false);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   /*
    * ---------------------------------------------------------
@@ -609,7 +619,7 @@ export default function AdminPage() {
   async function saveSite() {
     if (!db || !isAdmin) return;
 
-    setSavingProducts(true);
+    setBusy(true);
 
     try {
       const firestoreData = sanitizeForFirestore(data);
@@ -632,7 +642,7 @@ export default function AdminPage() {
       console.error('Failed to save site:', error);
       flash(error?.message || 'Save failed.');
     } finally {
-      setSavingProducts(false);
+      setBusy(false);
     }
   }
 
@@ -850,7 +860,7 @@ export default function AdminPage() {
   async function uploadProfilePicture(file) {
     if (!file || !storage || !me || !isAdmin) return;
 
-    setUploadingProfileImage(true);
+    setBusy(true);
 
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
@@ -883,7 +893,7 @@ export default function AdminPage() {
       console.error('Profile picture upload failed:', error);
       flash(error?.message || 'Profile picture upload failed.');
     } finally {
-      setUploadingProfileImage(false);
+      setBusy(false);
     }
   }
 
@@ -1259,6 +1269,16 @@ export default function AdminPage() {
       {/* TOP HEADER */}
       <header className="admin-route-head">
 
+        <button
+          type="button"
+          className="admin-mobile-menu"
+          aria-label={mobileNavOpen ? 'Close admin navigation' : 'Open admin navigation'}
+          aria-expanded={mobileNavOpen}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          <span></span><span></span><span></span>
+        </button>
+
         <a
           href="/"
           className="logo-lockup"
@@ -1320,13 +1340,13 @@ export default function AdminPage() {
             type="button"
           >
             <span className="account-avatar">
-              {profile?.photoURL ? (
-                <img src={profile.photoURL} alt="" />
-              ) : (
-                (me.displayName || me.email || 'A')
-                  .slice(0, 1)
-                  .toUpperCase()
-              )}
+              {(
+                me.displayName ||
+                me.email ||
+                'A'
+              )
+                .slice(0, 1)
+                .toUpperCase()}
             </span>
 
             <span>
@@ -1392,8 +1412,17 @@ export default function AdminPage() {
           {/* ADMIN LAYOUT */}
           <div className="admin-layout">
 
+            {mobileNavOpen && (
+              <button
+                type="button"
+                className="admin-sidebar-backdrop"
+                aria-label="Close admin navigation"
+                onClick={() => setMobileNavOpen(false)}
+              />
+            )}
+
             {/* NAVIGATION */}
-            <nav className="admin-nav">
+            <nav className={`admin-nav ${mobileNavOpen ? 'open' : ''}`}>
 
               {ADMIN_TABS.map(
                 ([key, icon, label]) => (
@@ -1405,9 +1434,10 @@ export default function AdminPage() {
                         ? 'active'
                         : ''
                     }
-                    onClick={() =>
-                      setTab(key)
-                    }
+                    onClick={() => {
+                      setTab(key);
+                      setMobileNavOpen(false);
+                    }}
                   >
                     <span>
                       {icon}
@@ -1786,7 +1816,7 @@ export default function AdminPage() {
                               '/panel-showcase.png'
                             }
                             alt={product.name || 'Product image'}
-                            onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                            onError={(event) => { event.currentTarget.src = '/panel-showcase.png'; }}
                           />
 
                           <div className="product-admin-fields">
@@ -1958,7 +1988,7 @@ export default function AdminPage() {
                                   input.value = '';
                                   if (!file) return;
 
-                                  setUploadingProductImage(true);
+                                  setBusy(true);
                                   try {
                                     const url = await uploadImage(file, 'products');
                                     const productId = String(product.id || `product-${index + 1}`);
@@ -2012,7 +2042,7 @@ export default function AdminPage() {
                                     console.error('Product image publish failed:', error);
                                     flash(error?.message || 'Product image upload failed.');
                                   } finally {
-                                    setUploadingProductImage(false);
+                                    setBusy(false);
                                   }
                                 }}
                               />
@@ -2501,7 +2531,7 @@ export default function AdminPage() {
                       <small>ADMIN ACCOUNT</small>
                     </div>
                     <label className="outline-btn profile-upload-btn">
-                      {uploadingProfileImage ? 'UPLOADING…' : 'CHANGE PHOTO'}
+                      CHANGE PHOTO
                       <input
                         type="file"
                         accept="image/*"
