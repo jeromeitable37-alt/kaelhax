@@ -4,14 +4,10 @@ export const runtime = 'nodejs';
 
 function getFirebaseConfig() {
   const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n').trim();
   const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_WEB_API_KEY;
 
   const missing = [
     !projectId ? 'FIREBASE_ADMIN_PROJECT_ID' : '',
-    !clientEmail ? 'FIREBASE_ADMIN_CLIENT_EMAIL' : '',
-    !privateKey ? 'FIREBASE_ADMIN_PRIVATE_KEY' : '',
     !apiKey ? 'NEXT_PUBLIC_FIREBASE_API_KEY/FIREBASE_WEB_API_KEY' : '',
   ].filter(Boolean);
 
@@ -20,7 +16,8 @@ function getFirebaseConfig() {
     error.code = 'FIREBASE_CONFIG_MISSING';
     throw error;
   }
-  return { projectId, clientEmail, privateKey, apiKey };
+
+  return { projectId, apiKey };
 }
 
 function getCloudinaryConfig() {
@@ -32,11 +29,13 @@ function getCloudinaryConfig() {
     !apiKey ? 'CLOUDINARY_API_KEY' : '',
     !apiSecret ? 'CLOUDINARY_API_SECRET' : '',
   ].filter(Boolean);
+
   if (missing.length) {
     const error = new Error(`Cloudinary is not configured on this deployment. Missing: ${missing.join(', ')}`);
     error.code = 'CLOUDINARY_CONFIG_MISSING';
     throw error;
   }
+
   return { cloudName, apiKey, apiSecret };
 }
 
@@ -53,25 +52,25 @@ async function verifyFirebaseToken(request) {
     throw error;
   }
 
-  const { apiKey, projectId } = getFirebaseConfig();
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idToken: token }),
-    cache: 'no-store',
-  });
+  const { apiKey } = getFirebaseConfig();
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: token }),
+      cache: 'no-store',
+    }
+  );
+
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.users?.[0]?.localId) {
-    const message = payload?.error?.message || 'Firebase token verification failed.';
-    const error = new Error(message);
+    const error = new Error(payload?.error?.message || 'Firebase token verification failed.');
     error.code = 'AUTH_INVALID';
     throw error;
   }
-  const user = payload.users[0];
-  if (user.firebase?.sign_in_provider === 'anonymous') {
-    // Anonymous users are allowed to authenticate, but cannot administer the media library.
-  }
-  return { uid: user.localId, projectId, token, user };
+
+  return { uid: payload.users[0].localId, token };
 }
 
 async function getFirestoreUserProfile(uid, token) {
@@ -81,9 +80,14 @@ async function getFirestoreUserProfile(uid, token) {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   });
+
   if (response.status === 404) return {};
+
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error?.message || `Firestore profile lookup failed (HTTP ${response.status}).`);
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Firestore profile lookup failed (HTTP ${response.status}).`);
+  }
+
   const fields = payload?.fields || {};
   const value = (field) => {
     const item = fields[field];
@@ -93,7 +97,11 @@ async function getFirestoreUserProfile(uid, token) {
     if (item.integerValue !== undefined) return Number(item.integerValue);
     return undefined;
   };
-  return { role: value('role'), disabled: value('disabled') };
+
+  return {
+    role: value('role'),
+    disabled: value('disabled'),
+  };
 }
 
 async function requireUser(request) {
@@ -117,21 +125,33 @@ function signCloudinaryParams(params, apiSecret) {
     .sort()
     .map((key) => `${key}=${params[key]}`)
     .join('&');
+
   return crypto.createHash('sha1').update(`${serialized}${apiSecret}`).digest('hex');
 }
 
 function validateFolder(folder, uid, isAdmin) {
   const normalized = String(folder || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!normalized.startsWith('kaelhax/')) throw new Error('Invalid Cloudinary folder.');
+
+  if (!normalized.startsWith('kaelhax/')) {
+    throw new Error('Invalid Cloudinary folder.');
+  }
+
   const isOwnProfile = normalized === `kaelhax/profiles/${uid}`;
   const isProductLibrary = isAdmin && normalized === 'kaelhax/products';
   const isPaymentAsset = isAdmin && normalized === 'kaelhax/payment';
-  if (!isOwnProfile && !isProductLibrary && !isPaymentAsset) throw new Error('You are not allowed to upload to this Cloudinary folder.');
+
+  if (!isOwnProfile && !isProductLibrary && !isPaymentAsset) {
+    throw new Error('You are not allowed to upload to this Cloudinary folder.');
+  }
+
   return normalized;
 }
 
 function jsonError(error, status = 500) {
-  return Response.json({ ok: false, error: error?.message || 'Cloudinary request failed.' }, { status });
+  return Response.json(
+    { ok: false, error: error?.message || 'Cloudinary request failed.' },
+    { status }
+  );
 }
 
 export async function GET(request) {
@@ -145,29 +165,88 @@ export async function GET(request) {
       const isAdmin = profile?.role === 'admin' && profile?.disabled !== true;
       const folder = validateFolder(url.searchParams.get('folder'), uid, isAdmin);
       const timestamp = Math.floor(Date.now() / 1000);
-      const params = { folder, public_id_prefix: folder, tags: 'kaelhax', timestamp };
-      return Response.json({ ok: true, cloudName, apiKey, timestamp, signature: signCloudinaryParams(params, apiSecret), folder, publicIdPrefix: folder, tags: 'kaelhax' });
+      const params = {
+        folder,
+        public_id_prefix: folder,
+        tags: 'kaelhax',
+        timestamp,
+      };
+
+      return Response.json({
+        ok: true,
+        cloudName,
+        apiKey,
+        timestamp,
+        signature: signCloudinaryParams(params, apiSecret),
+        folder,
+        publicIdPrefix: folder,
+        tags: 'kaelhax',
+      });
     }
 
     await requireAdmin(request);
     const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
     const search = (url.searchParams.get('search') || '').trim().toLowerCase();
-    const endpoint = new URL(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/resources/image/upload`);
+
+    const endpoint = new URL(
+      `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/resources/image/upload`
+    );
     endpoint.searchParams.set('prefix', 'kaelhax/products/');
     endpoint.searchParams.set('max_results', '100');
+
     const response = await fetch(endpoint, {
-      headers: { Authorization: `Basic ${Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')}` },
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')}`,
+      },
       cache: 'no-store',
     });
+
     const payload = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(payload?.error?.message || `Cloudinary library request failed (HTTP ${response.status}).`);
-    const assets = (payload?.resources || []).filter((item) => {
-      if (!search) return true;
-      return [item.public_id, item.display_name, item.format, ...(item.tags || [])].filter(Boolean).join(' ').toLowerCase().includes(search);
-    }).map((item) => ({ publicId: item.public_id, secureUrl: item.secure_url, url: item.url, width: item.width, height: item.height, bytes: item.bytes, format: item.format, createdAt: item.created_at, folder: item.asset_folder || item.folder || '', displayName: item.display_name || item.public_id.split('/').pop(), tags: item.tags || [] }));
+    if (!response.ok) {
+      throw new Error(
+        payload?.error?.message || `Cloudinary library request failed (HTTP ${response.status}).`
+      );
+    }
+
+    const assets = (payload?.resources || [])
+      .filter((item) => {
+        if (!search) return true;
+        return [
+          item.public_id,
+          item.display_name,
+          item.format,
+          ...(item.tags || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(search);
+      })
+      .map((item) => ({
+        publicId: item.public_id,
+        secureUrl: item.secure_url,
+        url: item.url,
+        width: item.width,
+        height: item.height,
+        bytes: item.bytes,
+        format: item.format,
+        createdAt: item.created_at,
+        folder: item.asset_folder || item.folder || '',
+        displayName: item.display_name || item.public_id.split('/').pop(),
+        tags: item.tags || [],
+      }));
+
     return Response.json({ ok: true, assets });
   } catch (error) {
-    const status = error?.code === 'CLOUDINARY_CONFIG_MISSING' || error?.code === 'FIREBASE_CONFIG_MISSING' ? 503 : error?.code === 'AUTH_MISSING' || error?.code === 'AUTH_INVALID' ? 401 : error?.code === 'ADMIN_REQUIRED' ? 403 : 500;
+    const status =
+      error?.code === 'CLOUDINARY_CONFIG_MISSING' || error?.code === 'FIREBASE_CONFIG_MISSING'
+        ? 503
+        : error?.code === 'AUTH_MISSING' || error?.code === 'AUTH_INVALID'
+          ? 401
+          : error?.code === 'ADMIN_REQUIRED'
+            ? 403
+            : 500;
+
     console.error('Cloudinary API error:', error);
     return jsonError(error, status);
   }
