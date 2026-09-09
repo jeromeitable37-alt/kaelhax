@@ -211,7 +211,21 @@ function Icon({
   children,
 }) {
   return (
-    <span className="ico">
+    <span
+      className="ico"
+      style={{
+        flex: '0 0 34px',
+        width: 34,
+        height: 34,
+        minWidth: 34,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 14,
+        borderRadius: 10,
+        boxSizing: 'border-box',
+      }}
+    >
       {children}
     </span>
   );
@@ -298,8 +312,15 @@ function normalizeSiteData(
                   price: String(option?.price || '').trim(),
                   slots: String(option?.slots || '').trim(),
                 }))
-              : [],
-            imageVersion: product?.imageVersion || product?.image || '',
+              : product?.priceOptions && typeof product.priceOptions === 'object'
+                ? Object.values(product.priceOptions).map((option) => ({
+                    label: String(option?.label || 'OPTION').trim(),
+                    price: String(option?.price || '').trim(),
+                    slots: String(option?.slots || '').trim(),
+                  }))
+                : [],
+            imageData: String(product?.imageData || ''),
+            imageVersion: product?.imageVersion || product?.image || product?.imageData || '',
           }))
         : DEFAULT.products,
 
@@ -950,6 +971,8 @@ export default function Home() {
         setData(
           merged
         );
+
+        setImageErrors({});
 
         setImagePreview(
           merged.products?.[0]
@@ -3596,7 +3619,7 @@ export default function Home() {
                     ) : (
                       <img
                         key={`${product.name}-${product.imageVersion || product.image || 'default-image'}`}
-                        src={product.image || '/panel-showcase.png'}
+                        src={product.imageData || product.image || '/panel-showcase.png'}
                         alt={product.name}
                         loading={index < 3 ? 'eager' : 'lazy'}
                         decoding="async"
