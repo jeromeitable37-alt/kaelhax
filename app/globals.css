@@ -670,108 +670,22 @@ html[data-theme="light"] .pricing-admin{background:#eef8f7;border-color:#bfd7d4}
 html[data-theme="light"] .pricing-admin-head b{color:#155f5b}
 html[data-theme="light"] .pricing-empty{color:#597577}
 
-
-/* =========================================================
-   NEXORIUM ADMIN MOBILE DRAWER + PRODUCT LAYOUT FIX
-   ========================================================= */
-.admin-mobile-menu{
-  display:none;
-  width:42px;height:42px;flex:0 0 42px;
-  border:1px solid #205b5f;border-radius:11px;
-  background:linear-gradient(145deg,#081719,#061113);
-  color:#72f8ee;cursor:pointer;
-  padding:9px;
-  align-items:center;justify-content:center;
-  flex-direction:column;gap:4px;
-  box-shadow:0 0 20px rgba(29,232,220,.06);
-}
-.admin-mobile-menu span{display:block;width:19px;height:2px;border-radius:2px;background:#72f8ee;transition:.2s}
-.admin-mobile-menu:hover{border-color:#41dcd6;box-shadow:0 0 24px rgba(29,232,220,.12)}
-.admin-sidebar-backdrop{display:none}
-
-/* Keep the admin navigation visually separated from its labels. */
-.admin-nav>button{
-  grid-template-columns:32px minmax(0,1fr) auto;
-  column-gap:14px;
-}
-.admin-nav>button span{
-  width:32px;height:32px;flex-basis:32px;border-radius:9px;
-}
-
-@media(max-width:760px){
-  .admin-route-head{
-    padding:0 12px;gap:10px;
-  }
-  .admin-route-head>.logo-lockup{flex:1;min-width:0}
-  .admin-route-head .logo-lockup strong{font-size:16px}
-  .admin-mobile-menu{display:flex}
-  .admin-route-head .top-actions{margin-left:auto}
-  .admin-route-head .account-chip{display:flex}
-  .admin-route-head .account-chip b,.admin-route-head .account-chip span:nth-child(2){display:none}
-  .admin-route-head .account-chip{padding:5px}
-
-  .admin-sidebar-backdrop{
-    display:block;position:fixed;inset:0;z-index:89;
-    border:0;background:rgba(0,5,6,.68);
-    backdrop-filter:blur(3px);
-  }
-  .admin-panel.standalone{overflow:visible}
-  .admin-layout{position:relative}
-  .admin-nav{
-    position:fixed;z-index:100;
-    left:8px;top:84px;bottom:10px;
-    width:min(286px,calc(100vw - 24px));
-    display:flex !important;flex-direction:column;
-    gap:7px !important;padding:14px 10px !important;
-    overflow-y:auto !important;overflow-x:hidden !important;
-    background:linear-gradient(180deg,#061012,#030708 72%,#020506);
-    border:1px solid #174a4d;border-radius:18px;
-    box-shadow:30px 25px 90px rgba(0,0,0,.58),0 0 35px rgba(29,232,220,.06);
-    transform:translateX(calc(-100% - 30px));
-    transition:transform .26s cubic-bezier(.22,.8,.2,1);
-  }
-  .admin-nav.open{transform:translateX(0)}
-  .admin-nav>button{
-    flex:0 0 auto;width:100%;min-height:50px !important;
-    display:grid !important;grid-template-columns:34px minmax(0,1fr) auto !important;
-    column-gap:12px !important;align-items:center;
-    padding:9px 11px !important;text-align:left !important;
-    font-size:9px !important;
-  }
-  .admin-nav>button span{
-    width:34px !important;height:34px !important;flex-basis:34px !important;
-  }
-  .admin-nav-bottom{
-    display:grid !important;gap:7px;margin-top:auto;padding-top:10px;
-    border-top:1px solid #12383b;
-  }
-  .admin-nav-bottom>*{width:100%}
-
-  /* Product cards: never squeeze fields into the 75px thumbnail column. */
-  .product-admin-row{
-    display:flex !important;flex-direction:column !important;
-    gap:14px !important;padding:14px !important;
-    width:100%;
-  }
-  .product-admin-row>img{
-    width:100% !important;height:190px !important;
-    max-height:42vw;min-height:150px;object-fit:cover;
-  }
-  .product-admin-fields{width:100%;min-width:0}
-  .product-admin-fields input,.product-admin-fields textarea{width:100%;min-width:0}
-  .inline-fields{display:grid !important;grid-template-columns:1fr !important;gap:8px !important}
-  .pricing-admin{width:100%;overflow:hidden}
-  .pricing-admin-head{align-items:flex-start}
-  .pricing-option-row{
-    grid-template-columns:minmax(0,1fr) minmax(76px,.65fr) !important;
-    gap:7px !important;
-  }
-  .pricing-option-row input:nth-child(3){grid-column:1 / 2}
-  .pricing-option-row .danger-btn{grid-column:2;grid-row:2;height:40px}
-  .upload-small{width:100%;display:flex;justify-content:center}
-  .product-admin-row>.danger-btn{
-    grid-column:auto !important;justify-self:stretch !important;width:100% !important;
-  }
-  .admin-content{padding:14px !important;min-width:0;overflow-x:hidden}
-  .save-btn{position:sticky;bottom:8px;width:100%;margin-top:14px;z-index:12}
-}
+/* V15 product and user profile improvements */
+.admin-image-empty{width:120px;height:90px;border:1px dashed #245257;border-radius:9px;display:grid;place-items:center;background:#050b0d;color:#4f7376;font:800 8px Orbitron;letter-spacing:.12em}
+.side-item{column-gap:14px}
+.side-item .ico{width:28px;height:28px;min-width:28px;flex:0 0 28px;display:grid;place-items:center;border:1px solid rgba(83,235,225,.14);border-radius:8px;background:rgba(29,232,220,.04);line-height:1}
+.side-item>span:not(.ico){min-width:0}
+.profile-user-modal{width:min(560px,94vw);max-height:86vh;overflow:auto}
+.user-profile-head{display:flex;gap:16px;align-items:center;padding-bottom:18px;border-bottom:1px solid #153438}
+.user-profile-head h2{font:800 22px Orbitron;margin:7px 0 4px}
+.user-profile-head p{margin:0;color:#6c8587;font-size:10px}
+.user-profile-avatar{width:82px;height:82px;border-radius:20px;border:1px solid #1b5759;background:#071416;display:grid;place-items:center;color:#75f7ef;font:900 28px Orbitron;overflow:hidden}
+.user-profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-photo-upload{display:block;margin:16px 0;border:1px solid #214c4f;background:#091517;border-radius:10px;padding:11px;text-align:center;color:#7ce8e1;font:800 8px Orbitron;cursor:pointer}
+.profile-photo-upload input{display:none}
+.profile-user-fields{display:grid;gap:12px}
+.profile-user-fields label{color:#789093;font:700 8px Orbitron;letter-spacing:.12em}
+.profile-user-fields input{display:block;width:100%;margin-top:6px;border:1px solid #1d383b;background:#071012;color:#e8eeef;border-radius:10px;padding:11px;font:500 11px Inter;outline:none}
+.profile-user-actions{display:flex;gap:9px;margin-top:17px}
+.profile-user-actions button{flex:1}
+@media(max-width:760px){.admin-image-empty{width:75px;height:65px}.profile-user-actions{flex-direction:column}.user-profile-head{align-items:flex-start}.side-item{column-gap:10px}}

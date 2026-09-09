@@ -255,78 +255,24 @@ function maskUsername(value) {
 }
 
 
-function normalizeSiteData(
-  parsed
-) {
-  const productImages =
-    parsed?.productImages && typeof parsed.productImages === 'object'
-      ? parsed.productImages
-      : {};
-
-  const products = Array.isArray(parsed?.products)
-    ? parsed.products.map((product, index) => {
-        const id = String(product?.id || `product-${index + 1}`);
-        return {
-          ...product,
-          id,
-          image: String(productImages[id] || product?.image || ''),
-        };
-      })
-    : DEFAULT.products.map((product, index) => ({
-        ...product,
-        id: String(product?.id || `product-${index + 1}`),
-      }));
-
+function normalizeSiteData(parsed) {
+  const productImages = parsed?.productImages && typeof parsed.productImages === 'object'
+    ? parsed.productImages : {};
+  const rawProducts = Array.isArray(parsed?.products) ? parsed.products : DEFAULT.products;
+  const products = rawProducts.map((product, index) => {
+    const id = String(product?.id || `product-${index + 1}`);
+    const directImage = String(product?.image || '').trim();
+    const mappedImage = String(productImages[id] || '').trim();
+    return { ...product, id, image: mappedImage || directImage, imageVersion: product?.imageVersion || 0 };
+  });
   return {
     ...DEFAULT,
-
     ...(parsed || {}),
-
     productImages,
-
     products,
-
-    payment: {
-      ...DEFAULT.payment,
-
-      ...(
-        (parsed || {})
-          .payment || {}
-      ),
-
-      qrImage:
-        parsed?.payment?.qrImage ||
-        DEFAULT.payment.qrImage,
-    },
-
-    stats: {
-      ...DEFAULT.stats,
-
-      ...(
-        (parsed || {})
-          .stats || {}
-      ),
-    },
-
-    products:
-      Array.isArray(
-        parsed?.products
-      )
-        ? parsed.products.map((product, index) => ({
-            ...product,
-            id: product?.id || `product-${index}-${String(product?.name || 'item').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-          }))
-        : DEFAULT.products.map((product, index) => ({
-            ...product,
-            id: `product-${index}-${String(product?.name || 'item').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-          })),
-
-    faq:
-      Array.isArray(
-        parsed?.faq
-      )
-        ? parsed.faq
-        : DEFAULT.faq,
+    payment: { ...DEFAULT.payment, ...((parsed || {}).payment || {}), qrImage: parsed?.payment?.qrImage || DEFAULT.payment.qrImage },
+    stats: { ...DEFAULT.stats, ...((parsed || {}).stats || {}) },
+    faq: Array.isArray(parsed?.faq) ? parsed.faq : DEFAULT.faq,
   };
 }
 
@@ -583,6 +529,9 @@ export default function Home() {
 
   const [showMyOrders, setShowMyOrders] =
     useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: '' });
 
   const [receiptFile, setReceiptFile] =
     useState(null);
@@ -650,8 +599,6 @@ export default function Home() {
     currentUser?.email
       ?.split('@')[0] ||
     'ACCOUNT';
-
-  const accountPhoto = currentUser?.photoURL || currentUser?.photoUrl || '';
 
 
   /*
@@ -910,52 +857,55 @@ export default function Home() {
   ]);
 
 
-  /*
-   * =========================================================
-   * ADMIN AUTO-REDIRECT
-   * Firebase admin accounts should enter the admin console
-   * automatically instead of staying on the storefront.
-   * =========================================================
-   */
-
   useEffect(() => {
-    if (
-      !firebaseConfigured ||
-      !user?.uid ||
-      !db ||
-      typeof window === 'undefined' ||
-      window.location.pathname === '/admin'
-    ) {
-      return undefined;
-    }
+    setProfileForm({ name: currentUser?.displayName || currentUser?.name || '' });
+  }, [currentUser?.uid, currentUser?.displayName, currentUser?.name]);
 
-    let cancelled = false;
+  async function saveUserProfile() {
+    if (!currentUser || !auth || !db || !firebaseConfigured) { flash('Please sign in with Firebase first.'); return; }
+    const name = profileForm.name.trim();
+    if (!name) { flash('Please enter a display name.'); return; }
+    setProfileBusy(true);
+    try {
+      await updateProfile(auth.currentUser, { displayName: name });
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), { displayName: name, updatedAt: serverTimestamp() });
+      flash('Profile updated successfully.');
+      setShowProfile(false);
+    } catch (error) {
+      console.error('Profile update failed:', error);
+      flash(error?.message || 'Could not update profile.');
+    } finally { setProfileBusy(false); }
+  }
 
-    (async () => {
-      try {
-        const profileSnap = await getDoc(
-          doc(db, 'users', user.uid)
-        );
+  async function uploadUserProfilePhoto(file) {
+    if (!file || !auth?.currentUser || !storage || !db) return;
+    setProfileBusy(true);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const photoRef = ref(storage, `profiles/${auth.currentUser.uid}/${Date.now()}-${safeName}`);
+      await uploadBytes(photoRef, file, { contentType: file.type || 'image/jpeg' });
+      const url = await getDownloadURL(photoRef);
+      await updateProfile(auth.currentUser, { photoURL: url });
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), { photoURL: url, updatedAt: serverTimestamp() });
+      flash('Profile photo updated.');
+    } catch (error) {
+      console.error('Profile photo upload failed:', error);
+      flash(error?.message || 'Could not update profile photo.');
+    } finally { setProfileBusy(false); }
+  }
 
-        if (cancelled || !profileSnap.exists()) return;
-
-        const profileData = profileSnap.data();
-        if (
-          profileData?.role === 'admin' &&
-          profileData?.disabled !== true
-        ) {
-          window.location.replace('/admin');
-        }
-      } catch (error) {
-        console.error('Admin redirect check failed:', error);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.uid]);
-
+  async function sendUserPasswordReset() {
+    if (!auth?.currentUser?.email) { flash('No email address is available for this account.'); return; }
+    setProfileBusy(true);
+    try {
+      const { sendPasswordResetEmail } = await import('firebase/auth');
+      await sendPasswordResetEmail(auth, auth.currentUser.email);
+      flash(`Password reset email sent to ${auth.currentUser.email}.`);
+    } catch (error) {
+      console.error('Password reset failed:', error);
+      flash(error?.message || 'Could not send password reset email.');
+    } finally { setProfileBusy(false); }
+  }
 
   /*
    * =========================================================
@@ -3048,19 +2998,14 @@ export default function Home() {
           {currentUser ? (
             <button
               className="account-chip"
-              onClick={() =>
-                setAdmin(
-                  isAdmin
-                )
-              }
+              onClick={() => setShowProfile(true)}
             >
               <span className="account-avatar">
-                {accountLabel
-                  .slice(
-                    0,
-                    1
-                  )
-                  .toUpperCase()}
+                {currentUser.photoURL ? (
+                  <img src={currentUser.photoURL} alt="" />
+                ) : (
+                  accountLabel.slice(0, 1).toUpperCase()
+                )}
               </span>
 
               <span>
@@ -3132,12 +3077,10 @@ export default function Home() {
 
           {currentUser ? (
             <div className="avatar profile-avatar">
-              {accountPhoto ? (
-                <img src={accountPhoto} alt="Profile" />
+              {currentUser.photoURL ? (
+                <img src={currentUser.photoURL} alt="" />
               ) : (
-                accountLabel
-                  .slice(0, 1)
-                  .toUpperCase()
+                accountLabel.slice(0, 1).toUpperCase()
               )}
             </div>
           ) : (
@@ -3320,6 +3263,17 @@ export default function Home() {
               }
             </em>
 
+          </button>
+        )}
+
+        {currentUser && (
+          <button
+            className="side-item"
+            onClick={() => { setShowProfile(true); setMenu(false); }}
+          >
+            <Icon>◎</Icon>
+            <span>Profile</span>
+            <em>ACCOUNT</em>
           </button>
         )}
 
@@ -4964,6 +4918,34 @@ export default function Home() {
       {/* ===================================================
           AUTH MODAL
       ==================================================== */}
+
+      {showProfile && currentUser && (
+        <div className="modal-bg" onClick={() => setShowProfile(false)}>
+          <div className="modal profile-user-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-x" onClick={() => setShowProfile(false)}>×</button>
+            <div className="user-profile-head">
+              <div className="user-profile-avatar">
+                {currentUser.photoURL ? <img src={currentUser.photoURL} alt="Profile" /> : (accountLabel || 'U').slice(0,1).toUpperCase()}
+              </div>
+              <div>
+                <span className="eyebrow">// USER PROFILE</span>
+                <h2>ACCOUNT SETTINGS</h2>
+                <p>{currentUser.email || 'Signed-in account'}</p>
+              </div>
+            </div>
+            <label className="profile-photo-upload">CHANGE PROFILE PHOTO<input type="file" accept="image/png,image/jpeg,image/webp" disabled={profileBusy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) uploadUserProfilePhoto(file); }} /></label>
+            <div className="profile-user-fields">
+              <label>Display name<input value={profileForm.name} onChange={(event) => setProfileForm({ name: event.target.value })} /></label>
+              <label>Email<input value={currentUser.email || ''} readOnly /></label>
+              <label>Account type<input value={isAdmin ? 'Administrator' : 'Member'} readOnly /></label>
+            </div>
+            <div className="profile-user-actions">
+              <button className="primary-btn" disabled={profileBusy} onClick={saveUserProfile}>{profileBusy ? 'UPDATING…' : 'SAVE PROFILE'}</button>
+              <button className="outline-btn" disabled={profileBusy} onClick={sendUserPasswordReset}>RESET PASSWORD</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {authMode && (
         <div
