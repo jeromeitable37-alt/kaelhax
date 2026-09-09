@@ -255,24 +255,78 @@ function maskUsername(value) {
 }
 
 
-function normalizeSiteData(parsed) {
-  const productImages = parsed?.productImages && typeof parsed.productImages === 'object'
-    ? parsed.productImages : {};
-  const rawProducts = Array.isArray(parsed?.products) ? parsed.products : DEFAULT.products;
-  const products = rawProducts.map((product, index) => {
-    const id = String(product?.id || `product-${index + 1}`);
-    const directImage = String(product?.image || '').trim();
-    const mappedImage = String(productImages[id] || '').trim();
-    return { ...product, id, image: mappedImage || directImage, imageVersion: product?.imageVersion || 0 };
-  });
+function normalizeSiteData(
+  parsed
+) {
+  const productImages =
+    parsed?.productImages && typeof parsed.productImages === 'object'
+      ? parsed.productImages
+      : {};
+
+  const products = Array.isArray(parsed?.products)
+    ? parsed.products.map((product, index) => {
+        const id = String(product?.id || `product-${index + 1}`);
+        return {
+          ...product,
+          id,
+          image: String(productImages[id] || product?.image || ''),
+        };
+      })
+    : DEFAULT.products.map((product, index) => ({
+        ...product,
+        id: String(product?.id || `product-${index + 1}`),
+      }));
+
   return {
     ...DEFAULT,
+
     ...(parsed || {}),
+
     productImages,
+
     products,
-    payment: { ...DEFAULT.payment, ...((parsed || {}).payment || {}), qrImage: parsed?.payment?.qrImage || DEFAULT.payment.qrImage },
-    stats: { ...DEFAULT.stats, ...((parsed || {}).stats || {}) },
-    faq: Array.isArray(parsed?.faq) ? parsed.faq : DEFAULT.faq,
+
+    payment: {
+      ...DEFAULT.payment,
+
+      ...(
+        (parsed || {})
+          .payment || {}
+      ),
+
+      qrImage:
+        parsed?.payment?.qrImage ||
+        DEFAULT.payment.qrImage,
+    },
+
+    stats: {
+      ...DEFAULT.stats,
+
+      ...(
+        (parsed || {})
+          .stats || {}
+      ),
+    },
+
+    products:
+      Array.isArray(
+        parsed?.products
+      )
+        ? parsed.products.map((product, index) => ({
+            ...product,
+            id: product?.id || `product-${index}-${String(product?.name || 'item').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          }))
+        : DEFAULT.products.map((product, index) => ({
+            ...product,
+            id: `product-${index}-${String(product?.name || 'item').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          })),
+
+    faq:
+      Array.isArray(
+        parsed?.faq
+      )
+        ? parsed.faq
+        : DEFAULT.faq,
   };
 }
 
@@ -529,6 +583,7 @@ export default function Home() {
 
   const [showMyOrders, setShowMyOrders] =
     useState(false);
+
   const [showProfile, setShowProfile] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '' });
@@ -599,6 +654,8 @@ export default function Home() {
     currentUser?.email
       ?.split('@')[0] ||
     'ACCOUNT';
+
+  const accountPhoto = currentUser?.photoURL || currentUser?.photoUrl || '';
 
 
   /*
@@ -857,6 +914,53 @@ export default function Home() {
   ]);
 
 
+  /*
+   * =========================================================
+   * ADMIN AUTO-REDIRECT
+   * Firebase admin accounts should enter the admin console
+   * automatically instead of staying on the storefront.
+   * =========================================================
+   */
+
+  useEffect(() => {
+    if (
+      !firebaseConfigured ||
+      !user?.uid ||
+      !db ||
+      typeof window === 'undefined' ||
+      window.location.pathname === '/admin'
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const profileSnap = await getDoc(
+          doc(db, 'users', user.uid)
+        );
+
+        if (cancelled || !profileSnap.exists()) return;
+
+        const profileData = profileSnap.data();
+        if (
+          profileData?.role === 'admin' &&
+          profileData?.disabled !== true
+        ) {
+          window.location.replace('/admin');
+        }
+      } catch (error) {
+        console.error('Admin redirect check failed:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+
+
   useEffect(() => {
     setProfileForm({ name: currentUser?.displayName || currentUser?.name || '' });
   }, [currentUser?.uid, currentUser?.displayName, currentUser?.name]);
@@ -906,6 +1010,7 @@ export default function Home() {
       flash(error?.message || 'Could not send password reset email.');
     } finally { setProfileBusy(false); }
   }
+
 
   /*
    * =========================================================
@@ -3001,11 +3106,12 @@ export default function Home() {
               onClick={() => setShowProfile(true)}
             >
               <span className="account-avatar">
-                {currentUser.photoURL ? (
-                  <img src={currentUser.photoURL} alt="" />
-                ) : (
-                  accountLabel.slice(0, 1).toUpperCase()
-                )}
+                {accountLabel
+                  .slice(
+                    0,
+                    1
+                  )
+                  .toUpperCase()}
               </span>
 
               <span>
@@ -3269,7 +3375,11 @@ export default function Home() {
         {currentUser && (
           <button
             className="side-item"
-            onClick={() => { setShowProfile(true); setMenu(false); }}
+            onClick={() => {
+              setShowProfile(true);
+              setMenu(false);
+            }}
+            type="button"
           >
             <Icon>◎</Icon>
             <span>Profile</span>

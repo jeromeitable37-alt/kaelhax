@@ -212,6 +212,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
 
   const [tab, setTab] = useState('overview');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadingProductIndex, setUploadingProductIndex] = useState(null);
   const [message, setMessage] = useState('');
@@ -259,6 +260,18 @@ export default function AdminPage() {
       );
     } catch {}
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleResize = () => {
+      if (window.innerWidth > 760) setMobileNavOpen(false);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   /*
    * ---------------------------------------------------------
@@ -606,17 +619,25 @@ export default function AdminPage() {
 
   async function saveSite() {
     if (!db || !isAdmin) return;
+
     setBusy(true);
+
     try {
       const firestoreData = sanitizeForFirestore(data);
+
       await withTimeout(
-        setDoc(doc(db, 'site', 'config'), {
-          ...firestoreData,
-          updatedAt: serverTimestamp(),
-        }, { merge: true }),
+        setDoc(
+          doc(db, 'site', 'config'),
+          {
+            ...firestoreData,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ),
         20000,
         'Saving site changes to Firestore'
       );
+
       flash('✓ Site changes published to Firebase.');
     } catch (error) {
       console.error('Failed to save site:', error);
@@ -665,7 +686,6 @@ export default function AdminPage() {
       setUploadingProductIndex(null);
     }
   }
-
 
   /*
    * ---------------------------------------------------------
@@ -1290,6 +1310,16 @@ export default function AdminPage() {
       {/* TOP HEADER */}
       <header className="admin-route-head">
 
+        <button
+          type="button"
+          className="admin-mobile-menu"
+          aria-label={mobileNavOpen ? 'Close admin navigation' : 'Open admin navigation'}
+          aria-expanded={mobileNavOpen}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          <span></span><span></span><span></span>
+        </button>
+
         <a
           href="/"
           className="logo-lockup"
@@ -1423,8 +1453,17 @@ export default function AdminPage() {
           {/* ADMIN LAYOUT */}
           <div className="admin-layout">
 
+            {mobileNavOpen && (
+              <button
+                type="button"
+                className="admin-sidebar-backdrop"
+                aria-label="Close admin navigation"
+                onClick={() => setMobileNavOpen(false)}
+              />
+            )}
+
             {/* NAVIGATION */}
-            <nav className="admin-nav">
+            <nav className={`admin-nav ${mobileNavOpen ? 'open' : ''}`}>
 
               {ADMIN_TABS.map(
                 ([key, icon, label]) => (
@@ -1436,9 +1475,10 @@ export default function AdminPage() {
                         ? 'active'
                         : ''
                     }
-                    onClick={() =>
-                      setTab(key)
-                    }
+                    onClick={() => {
+                      setTab(key);
+                      setMobileNavOpen(false);
+                    }}
                   >
                     <span>
                       {icon}
@@ -1811,18 +1851,14 @@ export default function AdminPage() {
                           key={`${product.name}-${index}-${product.imageVersion || product.image || ''}`}
                         >
 
-                          {product.image ? (
-                            <img
-                              src={product.image}
-                              alt={product.name || 'Product image'}
-                              onError={(event) => {
-                                event.currentTarget.style.display = 'none';
-                                event.currentTarget.parentElement?.classList.add('image-load-error');
-                              }}
-                            />
-                          ) : (
-                            <div className="admin-image-empty">NO IMAGE</div>
-                          )}
+                          <img
+                            src={
+                              product.image ||
+                              '/panel-showcase.png'
+                            }
+                            alt={product.name || 'Product image'}
+                            onError={(event) => { event.currentTarget.src = '/panel-showcase.png'; }}
+                          />
 
                           <div className="product-admin-fields">
 
@@ -2023,7 +2059,7 @@ export default function AdminPage() {
                     type="button"
                   >
                     {busy
-                      ? 'SAVING PRODUCTS…'
+                      ? 'SAVING…'
                       : 'SAVE PRODUCTS'}
                   </button>
 
