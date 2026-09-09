@@ -146,6 +146,17 @@ function sanitizeForFirestore(value, nestedArray = false) {
   return value;
 }
 
+function removeTransientBlobUrls(value) {
+  if (typeof value === 'string') return value.startsWith('blob:') ? '' : value;
+  if (Array.isArray(value)) return value.map(removeTransientBlobUrls);
+  if (value && typeof value === 'object') {
+    const output = {};
+    for (const [key, item] of Object.entries(value)) output[key] = removeTransientBlobUrls(item);
+    return output;
+  }
+  return value;
+}
+
 function mergeData(parsed) {
   return {
     ...DEFAULT,
@@ -215,6 +226,7 @@ export default function AdminPage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadingProductIndex, setUploadingProductIndex] = useState(null);
+  const [productPreviews, setProductPreviews] = useState({});
   const [message, setMessage] = useState('');
 
   const [qrPreview, setQrPreview] = useState(
@@ -623,7 +635,7 @@ export default function AdminPage() {
     setBusy(true);
 
     try {
-      const firestoreData = sanitizeForFirestore(data);
+      const firestoreData = sanitizeForFirestore(removeTransientBlobUrls(data));
 
       await withTimeout(
         setDoc(
@@ -696,7 +708,7 @@ export default function AdminPage() {
     setUploadingProductIndex(index);
     const previewUrl = URL.createObjectURL(file);
     try {
-      updateProduct(index, { image: previewUrl, imageVersion: Date.now() });
+      setProductPreviews(prev => ({ ...prev, [index]: previewUrl }));
       const [url, imageData] = await Promise.all([
         uploadImage(file, 'products'),
         compressProductImage(file),
@@ -730,6 +742,7 @@ export default function AdminPage() {
       flash(error?.message || 'Product image upload failed.');
     } finally {
       URL.revokeObjectURL(previewUrl);
+      setProductPreviews(prev => { const next = { ...prev }; delete next[index]; return next; });
       setUploadingProductIndex(null);
     }
   }
@@ -1428,13 +1441,17 @@ export default function AdminPage() {
             type="button"
           >
             <span className="account-avatar">
-              {(
-                me.displayName ||
-                me.email ||
-                'A'
-              )
-                .slice(0, 1)
-                .toUpperCase()}
+              {profile?.photoURL || me?.photoURL ? (
+                <img
+                  src={profile?.photoURL || me?.photoURL}
+                  alt="Admin profile"
+                  className="account-avatar-image"
+                />
+              ) : (
+                (me?.displayName || me?.email || 'A')
+                  .slice(0, 1)
+                  .toUpperCase()
+              )}
             </span>
 
             <span>
@@ -1710,7 +1727,7 @@ export default function AdminPage() {
                     <button
                       className="primary-btn"
                       onClick={saveSite}
-                      disabled={busy}
+                      disabled={busy || uploadingProductIndex !== null}
                       type="button"
                     >
                       {busy
@@ -1900,7 +1917,7 @@ export default function AdminPage() {
 
                           <img
                             src={
-                              product.image ||
+                              productPreviews[index] || product.image ||
                               '/panel-showcase.png'
                             }
                             alt={product.name || 'Product image'}
@@ -2102,7 +2119,7 @@ export default function AdminPage() {
                   <button
                     className="primary-btn big save-btn"
                     onClick={saveSite}
-                    disabled={busy}
+                    disabled={busy || uploadingProductIndex !== null}
                     type="button"
                   >
                     {busy
@@ -2134,7 +2151,7 @@ export default function AdminPage() {
                     <button
                       className="primary-btn"
                       onClick={saveSite}
-                      disabled={busy}
+                      disabled={busy || uploadingProductIndex !== null}
                       type="button"
                     >
                       {busy
@@ -2362,7 +2379,7 @@ export default function AdminPage() {
                                 <>
                                   <button
                                     className="primary-btn"
-                                    disabled={busy}
+                                    disabled={busy || uploadingProductIndex !== null}
                                     onClick={() =>
                                       setOrderStatus(
                                         order.id,
@@ -2376,7 +2393,7 @@ export default function AdminPage() {
 
                                   <button
                                     className="danger-btn"
-                                    disabled={busy}
+                                    disabled={busy || uploadingProductIndex !== null}
                                     onClick={() =>
                                       setOrderStatus(
                                         order.id,
@@ -2551,7 +2568,7 @@ export default function AdminPage() {
                   <div className="profile-card-admin profile-card-enhanced">
                     <div className="profile-big">
                       {profile?.photoURL ? (
-                        <img src={profile.photoURL} alt="Profile" />
+                        <img src={profile.photoURL} alt="Profile" className="profile-photo-image" />
                       ) : (
                         (me?.displayName || me?.email || 'A').slice(0, 1).toUpperCase()
                       )}
@@ -2577,7 +2594,7 @@ export default function AdminPage() {
                       <h4>Password</h4>
                       <p>Send a secure password-reset email to the current administrator account.</p>
                     </div>
-                    <button className="primary-btn" type="button" onClick={resetPassword} disabled={busy}>
+                    <button className="primary-btn" type="button" onClick={resetPassword} disabled={busy || uploadingProductIndex !== null}>
                       {busy ? 'PROCESSING…' : 'RESET PASSWORD'}
                     </button>
                   </div>

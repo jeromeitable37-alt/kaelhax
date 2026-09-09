@@ -255,6 +255,11 @@ function maskUsername(value) {
 }
 
 
+function safeImageValue(value) {
+  const text = String(value || '');
+  return text.startsWith('blob:') ? '' : text;
+}
+
 function normalizeSiteData(
   parsed
 ) {
@@ -269,7 +274,7 @@ function normalizeSiteData(
         return {
           ...product,
           id,
-          image: String(productImages[id] || product?.image || ''),
+          image: safeImageValue(productImages[id] || product?.image || ''),
           imageData: String(product?.imageData || ''),
         };
       })

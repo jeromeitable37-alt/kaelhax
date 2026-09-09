@@ -1,7 +1,6 @@
-KAELHAX V19 - Restore proven V15 upload/profile flows + keep V18 mobile admin UI
-
-- Restored V15 proven product image upload flow: previews image, uploads to Firebase Storage, and publishes exact products array + image map.
-- Restored V15 storefront user profile modal, profile photo upload, display-name update, and password reset.
-- Preserved V18 admin mobile hamburger/navigation and automatic admin redirect.
-- Restored profile/image CSS needed by the V15 user profile UI.
-- Firebase Storage rules include profiles/{userId}/... access.
+V21
+- Never persist blob: preview URLs into Firestore.
+- Ignore legacy blob URLs when normalizing products.
+- User/admin profile images display with object-fit:cover.
+- Admin header uses uploaded admin photo.
+- Product image unavailable placeholder hardened.
