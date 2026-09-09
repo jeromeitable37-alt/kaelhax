@@ -27,7 +27,14 @@ function getCloudinaryConfig() {
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
   if (!cloudName || !apiKey || !apiSecret) {
-    throw new Error('Cloudinary environment variables are missing.');
+    const missing = [
+      !cloudName ? 'CLOUDINARY_CLOUD_NAME' : '',
+      !apiKey ? 'CLOUDINARY_API_KEY' : '',
+      !apiSecret ? 'CLOUDINARY_API_SECRET' : '',
+    ].filter(Boolean);
+    const error = new Error(`Cloudinary is not configured on this deployment. Missing: ${missing.join(', ')}`);
+    error.code = 'CLOUDINARY_CONFIG_MISSING';
+    throw error;
   }
 
   return { cloudName, apiKey, apiSecret };
@@ -180,7 +187,12 @@ export async function GET(request) {
 
     return Response.json({ ok: true, assets });
   } catch (error) {
-    const status = /required|missing|invalid|not allowed|authentication/i.test(error?.message || '') ? 401 : 500;
+    const message = error?.message || 'Cloudinary request failed.';
+    const status =
+      error?.code === 'CLOUDINARY_CONFIG_MISSING' ? 503 :
+      /authentication|token/i.test(message) ? 401 :
+      /missing|required/i.test(message) ? 400 :
+      500;
     return jsonError(error, status);
   }
 }

@@ -45,3 +45,8 @@ Cloudinary's signed-upload docs recommend keeping the API secret server-side.
 EXISTING FIRESTORE DATA
 Products that currently contain blob: URLs need to be reselected/reuploaded once in the new
 Cloudinary library because a blob: URL is only a browser-local temporary URL.
+
+
+V22 HOTFIX
+- Cloudinary API route now reports missing deployment environment variables explicitly (HTTP 503) instead of a generic HTTP 500.
+- After adding Cloudinary variables in Vercel, a NEW deployment is required because environment variables are injected at build/runtime deployment time.
