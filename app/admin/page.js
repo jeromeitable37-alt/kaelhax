@@ -555,31 +555,46 @@ export default function AdminPage() {
    * ---------------------------------------------------------
    */
 
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        window.setTimeout(() => {
+          reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s. Check your Firebase connection and browser console.`));
+        }, ms);
+      }),
+    ]);
+  }
+
   async function uploadImage(file, folder) {
     if (!file || !storage || !me) {
       throw new Error('Firebase Storage is not available for this upload.');
     }
 
-    const safeName = file.name.replace(
-      /[^a-zA-Z0-9._-]/g,
-      '-'
-    );
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const uniqueId = typeof crypto?.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     const objectRef = ref(
       storage,
-      `${folder}/${me.uid}/${Date.now()}-${crypto.randomUUID()}-${safeName}`
+      `${folder}/${me.uid}/${Date.now()}-${uniqueId}-${safeName}`
     );
 
-    await uploadBytes(objectRef, file, {
-      contentType: file.type || 'image/jpeg',
-      cacheControl: 'public,max-age=31536000,immutable',
-    });
+    await withTimeout(
+      uploadBytes(objectRef, file, {
+        contentType: file.type || 'image/jpeg',
+        cacheControl: 'public,max-age=31536000,immutable',
+      }),
+      30000,
+      'Image upload'
+    );
 
-    const url = await getDownloadURL(objectRef);
-
-    // Return the canonical Firebase Storage URL. The unique object path is
-    // already enough to prevent collisions, so no query-string tricks are needed.
-    return url;
+    return withTimeout(
+      getDownloadURL(objectRef),
+      15000,
+      'Getting image URL'
+    );
   }
 
   /*
@@ -596,16 +611,20 @@ export default function AdminPage() {
     try {
       const firestoreData = sanitizeForFirestore(data);
 
-      await setDoc(
-        doc(db, 'site', 'config'),
-        {
-          ...firestoreData,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
+      await withTimeout(
+        setDoc(
+          doc(db, 'site', 'config'),
+          {
+            ...firestoreData,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ),
+        20000,
+        'Saving site changes to Firestore'
       );
 
-      flash('Site changes published to Firebase.');
+      flash('✓ Site changes published to Firebase.');
     } catch (error) {
       console.error('Failed to save site:', error);
       flash(error?.message || 'Save failed.');
@@ -1958,13 +1977,17 @@ export default function AdminPage() {
                                     );
 
                                     const configRef = doc(db, 'site', 'config');
-                                    await setDoc(
-                                      configRef,
-                                      {
-                                        products: sanitizeForFirestore(updatedProducts),
-                                        updatedAt: serverTimestamp(),
-                                      },
-                                      { merge: true }
+                                    await withTimeout(
+                                      setDoc(
+                                        configRef,
+                                        {
+                                          products: sanitizeForFirestore(updatedProducts),
+                                          updatedAt: serverTimestamp(),
+                                        },
+                                        { merge: true }
+                                      ),
+                                      20000,
+                                      'Publishing product image'
                                     );
 
                                     setData((prev) => ({
