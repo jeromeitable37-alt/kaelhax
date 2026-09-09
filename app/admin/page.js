@@ -602,40 +602,13 @@ export default function AdminPage() {
           ...firestoreData,
           updatedAt: serverTimestamp(),
         },
-        {
-          merge: true,
-        }
+        { merge: true }
       );
 
-      // Read the document back so the admin UI can confirm the actual cloud value.
-      // This prevents a misleading "saved" message when the document still contains
-      // an old image path.
-      const savedSnap = await (await import('firebase/firestore')).getDoc(
-        doc(db, 'site', 'config')
-      );
-      const saved = savedSnap.exists() ? savedSnap.data() : null;
-      const expectedImages = data.products.map((p) => String(p?.image || ''));
-      const savedImages = Array.isArray(saved?.products)
-        ? saved.products.map((p) => String(p?.image || ''))
-        : [];
-      const verified = expectedImages.every((value, index) => value === savedImages[index]);
-
-      if (!verified) {
-        console.error('Firebase verification mismatch', { expectedImages, savedImages });
-        throw new Error('Firebase saved an older product image value. Please retry the image upload.');
-      }
-
-      flash('Site changes published and verified in Firebase.');
+      flash('Site changes published to Firebase.');
     } catch (error) {
-      console.error(
-        'Failed to save site:',
-        error
-      );
-
-      flash(
-        error?.message ||
-          'Save failed.'
-      );
+      console.error('Failed to save site:', error);
+      flash(error?.message || 'Save failed.');
     } finally {
       setBusy(false);
     }
@@ -1958,87 +1931,57 @@ export default function AdminPage() {
                                 type="file"
                                 accept="image/*"
                                 onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  e.target.value = '';
+                                  const input = e.currentTarget;
+                                  const file = input.files?.[0];
+                                  input.value = '';
                                   if (!file) return;
 
+                                  setBusy(true);
                                   try {
-                                    setBusy(true);
                                     const url = await uploadImage(file, 'products');
                                     const productId = String(product.id || `product-${index + 1}`);
                                     const imageVersion = Date.now();
 
+                                    // Build the complete product list from the CURRENT admin state.
+                                    // This is important for newly-created products that do not exist
+                                    // in Firestore yet. The old implementation only mapped existing
+                                    // cloud products, so a new product could lose its uploaded image.
+                                    const updatedProducts = data.products.map((currentProduct, currentIndex) =>
+                                      currentIndex === index
+                                        ? {
+                                            ...currentProduct,
+                                            id: productId,
+                                            image: url,
+                                            imageVersion,
+                                          }
+                                        : currentProduct
+                                    );
+
                                     const configRef = doc(db, 'site', 'config');
-                                    const { getDoc } = await import('firebase/firestore');
-                                    const snap = await getDoc(configRef);
-                                    const cloud = snap.exists() ? snap.data() : {};
-                                    const cloudProducts = Array.isArray(cloud?.products) ? cloud.products : [];
-                                    const cloudImages = cloud?.productImages && typeof cloud.productImages === 'object'
-                                      ? cloud.productImages
-                                      : {};
-
-                                    // IMPORTANT: update the actual product.image field in Firestore
-                                    // using the latest cloud document. This prevents a stale React
-                                    // state value from putting /panel-showcase.png (or an empty value)
-                                    // back into the product after the upload.
-                                    const updatedProducts = cloudProducts.length
-                                      ? cloudProducts.map((cloudProduct, cloudIndex) => {
-                                          const cloudId = String(cloudProduct?.id || `product-${cloudIndex + 1}`);
-                                          const matches = cloudId === productId || cloudIndex === index;
-                                          return matches
-                                            ? {
-                                                ...cloudProduct,
-                                                id: productId,
-                                                image: url,
-                                                imageVersion,
-                                              }
-                                            : cloudProduct;
-                                        })
-                                      : data.products.map((currentProduct, currentIndex) =>
-                                          currentIndex === index
-                                            ? { ...currentProduct, id: productId, image: url, imageVersion }
-                                            : currentProduct
-                                        );
-
-                                    const nextProductImages = { ...cloudImages, [productId]: url };
-
                                     await setDoc(
                                       configRef,
                                       {
-                                        products: updatedProducts,
-                                        productImages: nextProductImages,
+                                        products: sanitizeForFirestore(updatedProducts),
                                         updatedAt: serverTimestamp(),
                                       },
                                       { merge: true }
                                     );
 
-                                    // Update the local product for the current admin screen too.
                                     setData((prev) => ({
                                       ...prev,
                                       products: prev.products.map((currentProduct, currentIndex) =>
                                         currentIndex === index
-                                          ? { ...currentProduct, id: productId, image: url, imageVersion }
+                                          ? {
+                                              ...currentProduct,
+                                              id: productId,
+                                              image: url,
+                                              imageVersion,
+                                            }
                                           : currentProduct
                                       ),
-                                      productImages: {
-                                        ...(prev.productImages || {}),
-                                        [productId]: url,
-                                      },
                                     }));
 
-                                    // Verify BOTH the actual product image field and the dedicated map.
-                                    const verifySnap = await getDoc(configRef);
-                                    const verifyData = verifySnap.exists() ? verifySnap.data() : null;
-                                    const verifyProducts = Array.isArray(verifyData?.products) ? verifyData.products : [];
-                                    const verifiedProduct = verifyProducts.find((item) => String(item?.id || '') === productId);
-                                    const verifiedUrl = String(verifiedProduct?.image || '');
-                                    const verifiedMapUrl = String(verifyData?.productImages?.[productId] || '');
-
-                                    if (verifiedUrl !== url || verifiedMapUrl !== url) {
-                                      throw new Error('Upload completed, but Firestore did not save the new image URL to the product.');
-                                    }
-
-                                    flash('✓ Product image uploaded, saved, and verified.');
+                                    flash('✓ Product image uploaded and saved to Firebase.');
                                   } catch (error) {
                                     console.error('Product image publish failed:', error);
                                     flash(error?.message || 'Product image upload failed.');
