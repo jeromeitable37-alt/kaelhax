@@ -1,6 +1,47 @@
-V21
-- Never persist blob: preview URLs into Firestore.
-- Ignore legacy blob URLs when normalizing products.
-- User/admin profile images display with object-fit:cover.
-- Admin header uses uploaded admin photo.
-- Product image unavailable placeholder hardened.
+KAELHAX — CLOUDINARY IMAGE LIBRARY FINAL
+
+This patch replaces Firebase Storage for PRODUCT and PROFILE images with Cloudinary.
+The existing Firebase Auth / Firestore / order system remains in place.
+
+FEATURES
+- Signed Cloudinary uploads. The API secret stays server-side.
+- Admin Image Library tab with search and refresh.
+- Product editor: UPLOAD TO CLOUDINARY or SELECT FROM LIBRARY.
+- Product Firestore records store permanent Cloudinary secure_url + publicId.
+- User profile photo uses Cloudinary.
+- Admin profile photo uses Cloudinary.
+- No blob: URLs are persisted.
+- No Cloudinary SDK package is required; the server route uses Cloudinary's REST APIs.
+- Existing Firebase Storage can remain for legacy receipt functionality.
+
+CLOUDINARY SETUP
+1. Create/sign in to a Cloudinary account.
+2. Open Settings > API Keys and copy:
+   - Cloud name
+   - API Key
+   - API Secret
+3. Put them in your local .env.local:
+   CLOUDINARY_CLOUD_NAME=...
+   CLOUDINARY_API_KEY=...
+   CLOUDINARY_API_SECRET=...
+4. Add the same 3 variables to Vercel Project Settings > Environment Variables.
+   Add them to Production (and Preview if you use Preview deployments).
+5. Redeploy the project.
+
+NO UPLOAD PRESET IS REQUIRED.
+This implementation uses signed uploads, so the API secret is never exposed to browser code.
+
+FOLDERS USED
+- kaelhax/products
+- kaelhax/profiles/{firebase-user-id}
+- kaelhax/payment
+
+The admin image library lists the kaelhax/products assets.
+
+IMPORTANT SECURITY NOTE
+Do not put CLOUDINARY_API_SECRET in a NEXT_PUBLIC_ variable, GitHub, or browser code.
+Cloudinary's signed-upload docs recommend keeping the API secret server-side.
+
+EXISTING FIRESTORE DATA
+Products that currently contain blob: URLs need to be reselected/reuploaded once in the new
+Cloudinary library because a blob: URL is only a browser-local temporary URL.

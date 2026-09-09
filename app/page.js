@@ -7,6 +7,8 @@ import {
   useState,
 } from 'react';
 
+import { uploadToCloudinary } from '../lib/cloudinary-client';
+
 import {
   auth,
   googleProvider,
@@ -988,15 +990,17 @@ export default function Home() {
   }
 
   async function uploadUserProfilePhoto(file) {
-    if (!file || !auth?.currentUser || !storage || !db) return;
+    if (!file || !auth?.currentUser || !db || !firebaseConfigured) return;
     setProfileBusy(true);
     try {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-      const photoRef = ref(storage, `profiles/${auth.currentUser.uid}/${Date.now()}-${safeName}`);
-      await uploadBytes(photoRef, file, { contentType: file.type || 'image/jpeg' });
-      const url = await getDownloadURL(photoRef);
+      const uploaded = await uploadToCloudinary(file, `kaelhax/profiles/${auth.currentUser.uid}`);
+      const url = uploaded.secureUrl;
       await updateProfile(auth.currentUser, { photoURL: url });
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), { photoURL: url, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+        photoURL: url,
+        photoURLPublicId: uploaded.publicId,
+        updatedAt: serverTimestamp(),
+      });
       flash('Profile photo updated.');
     } catch (error) {
       console.error('Profile photo upload failed:', error);
