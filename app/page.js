@@ -881,6 +881,31 @@ export default function Home() {
 
   /*
    * =========================================================
+   * ADMIN AUTO-REDIRECT
+   * =========================================================
+   * Once Firebase confirms the signed-in account is an admin,
+   * send it directly to the dedicated admin console instead of
+   * showing the storefront first.
+   */
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      window.location.pathname !== '/' ||
+      !firebaseConfigured ||
+      !user ||
+      !cloudReady ||
+      !isAdmin
+    ) {
+      return;
+    }
+
+    window.location.replace('/admin');
+  }, [user?.uid, cloudReady, isAdmin]);
+
+
+  /*
+   * =========================================================
    * SITE CONFIG
    * =========================================================
    */
@@ -2458,57 +2483,106 @@ export default function Home() {
    * =========================================================
    */
 
-  async function notifyTelegram(order) {
+  async function notifyTelegram(
+    order
+  ) {
     try {
-      if (!auth?.currentUser) {
-        console.warn('Telegram notification skipped: user is not signed in.');
-        return false;
-      }
+      const controller =
+        new AbortController();
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      const timeout =
+        setTimeout(
+          () =>
+            controller.abort(),
+          8000
+        );
 
-      let idToken;
+      const response =
+        await fetch(
+          '/api/telegram/order',
+          {
+            method:
+              'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+
+            body:
+              JSON.stringify({
+                orderId:
+                  order.id,
+
+                userId:
+                  order.userId,
+
+                userEmail:
+                  order.userEmail,
+
+                usernameMasked:
+                  order.usernameMasked,
+
+                productName:
+                  order.productName,
+
+                duration:
+                  order.duration,
+
+                amount:
+                  order.amount,
+
+                paymentReference:
+                  order.paymentReference,
+
+                /*
+                 * Send receipt data to your
+                 * Telegram endpoint too.
+                 */
+                receiptData:
+                  order.receiptData,
+
+                deliveryUrl:
+                  order.deliveryUrl,
+              }),
+
+            signal:
+              controller.signal,
+          }
+        );
+
+      clearTimeout(
+        timeout
+      );
+
+      let result =
+        null;
+
       try {
-        idToken = await auth.currentUser.getIdToken(false);
-      } catch (error) {
-        clearTimeout(timeout);
-        console.error('Could not get Firebase ID token for Telegram notification:', error);
-        return false;
-      }
+        result =
+          await response.json();
+      } catch {}
 
-      const response = await fetch('/api/telegram/order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          orderId: order.id,
-        }),
-        signal: controller.signal,
-      });
+      if (
+        !response.ok
+      ) {
+        console.error(
+          'Telegram notification failed:',
+          result
+        );
 
-      clearTimeout(timeout);
-
-      const responseText = await response.text();
-      let result = null;
-
-      try {
-        result = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        console.error('Telegram endpoint returned invalid JSON:', responseText);
-        return false;
-      }
-
-      if (!response.ok || !result?.ok) {
-        console.error('Telegram notification failed:', result);
         return false;
       }
 
       return true;
-    } catch (error) {
-      console.error('Telegram notification failed:', error);
+    } catch (
+      error
+    ) {
+      console.error(
+        'Telegram notification failed:',
+        error
+      );
+
       return false;
     }
   }

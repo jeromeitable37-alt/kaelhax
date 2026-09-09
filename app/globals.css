@@ -595,3 +595,173 @@ html[data-theme="light"] .user-admin-row{background:#f3faf9;border-color:#c4ddda
     padding: 9px 12px;
   }
 }
+
+
+/* =========================================================
+   KAELHAX ENHANCEMENT PACK — SIDEBARS / PROFILE / SETTINGS
+   ========================================================= */
+
+/* Storefront sidebar icon alignment: icons now have their own visual column. */
+.side-item,
+.side-cta {
+  gap: 10px;
+}
+.side-item .ico,
+.side-cta .ico {
+  width: 24px;
+  min-width: 24px;
+  flex: 0 0 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1;
+  text-align: center;
+  opacity: .95;
+}
+.side-item span:not(.ico) { min-width: 0; }
+
+/* Admin shell */
+.admin-route-head { gap: 14px; }
+.admin-route-head .logo-lockup { min-width: 0; }
+.admin-route-head .top-actions { flex-shrink: 0; }
+.account-avatar-photo { overflow: hidden; padding: 0; }
+.account-avatar-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.admin-mobile-menu {
+  display: none;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border: 1px solid #245457;
+  border-radius: 12px;
+  background: rgba(7,20,22,.9);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 0 22px rgba(29,232,220,.06);
+}
+.admin-mobile-menu span { width: 18px; height: 2px; display: block; border-radius: 999px; background: #76eee6; }
+.admin-nav-brand { display:flex; align-items:center; gap:10px; padding:2px 4px 14px; border-bottom:1px solid rgba(29,232,220,.08); margin-bottom:2px; }
+.admin-nav-brand-dot { width:8px; height:8px; border-radius:50%; background:#21e8df; box-shadow:0 0 12px rgba(29,232,220,.55); flex:0 0 8px; }
+.admin-nav-brand b { display:block; font:800 9px Orbitron; letter-spacing:.14em; color:#c7fffb; }
+.admin-nav-brand small { display:block; margin-top:3px; font-size:7px; color:#547174; letter-spacing:.14em; }
+.admin-nav-close { margin-left:auto; display:none; width:28px; height:28px; border:1px solid #24484b; border-radius:8px; color:#79dcd6; background:#081517; cursor:pointer; }
+.admin-nav-backdrop { display:none; }
+.admin-nav > button { position: relative; }
+.admin-nav > button span { flex:0 0 22px; }
+.admin-nav > button em { margin-left:auto; font-style:normal; min-width:18px; height:18px; border-radius:999px; display:grid; place-items:center; background:#3a2e12; color:#f6dd69; font:800 7px Orbitron; }
+
+.profile-card-enhanced { min-height: 110px; }
+.profile-big-photo { overflow:hidden; padding:0; }
+.profile-big-photo img { width:100%; height:100%; object-fit:cover; display:block; }
+.profile-card-admin > div:nth-child(2) { min-width:0; }
+.upload-profile-btn { display:inline-flex; align-items:center; justify-content:center; border:1px solid #245a5e; background:#091719; color:#83eee7; border-radius:10px; padding:11px 14px; font:800 8px Orbitron; letter-spacing:.08em; cursor:pointer; }
+.upload-profile-btn input { display:none; }
+.profile-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+.profile-detail-card { margin-top:0; min-height:115px; display:flex; flex-direction:column; justify-content:center; }
+.profile-detail-card b { display:block; margin-top:7px; color:#d6f8f5; font:800 13px Orbitron; word-break:break-word; }
+.profile-detail-card small { display:block; margin-top:6px; color:#648083; }
+.security-card { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:14px; padding:18px; border:1px solid #194145; border-radius:15px; background:radial-gradient(circle at 90% 10%,rgba(29,232,220,.08),transparent 34%),#071416; }
+.security-card h4 { margin:7px 0 5px; font:800 17px Orbitron; }
+.security-card p { margin:0; color:#668084; font-size:10px; line-height:1.6; }
+.settings-grid-admin { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.setting-card-admin { display:flex; align-items:center; justify-content:space-between; gap:18px; min-height:116px; padding:16px; border:1px solid #193e41; border-radius:14px; background:#071416; }
+.setting-card-admin b { display:block; font:800 12px Orbitron; color:#d7f8f5; }
+.setting-card-admin span { display:block; margin-top:6px; color:#668084; font-size:9px; line-height:1.55; max-width:420px; }
+.settings-toggle { border:1px solid #24585b; background:#091719; color:#74e9e0; border-radius:999px; padding:8px 12px; min-width:90px; cursor:pointer; font:800 8px Orbitron; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+.settings-toggle > span { width:7px; height:7px; border-radius:50%; background:#7a8889; margin:0; }
+.settings-toggle.active { border-color:#318e89; background:#0c2829; }
+.settings-toggle.active > span { background:#4ef4e7; box-shadow:0 0 10px rgba(78,244,231,.55); }
+.settings-status { flex-shrink:0; border:1px solid #1d5759; border-radius:999px; padding:7px 10px; color:#64ddd5 !important; font:800 7px Orbitron !important; margin:0 !important; }
+.settings-note { margin-top:14px; }
+
+html[data-theme="light"] .admin-mobile-menu { background:#edf8f6; border-color:#9bc9c5; }
+html[data-theme="light"] .admin-nav-brand { border-bottom-color:#c6dfdc; }
+html[data-theme="light"] .admin-nav-brand b { color:#183d3f; }
+html[data-theme="light"] .admin-nav-brand small { color:#678285; }
+html[data-theme="light"] .setting-card-admin,
+html[data-theme="light"] .security-card { background:#f3faf9; border-color:#c4ddda; }
+html[data-theme="light"] .profile-detail-card { background:#f3faf9; }
+html[data-theme="light"] .profile-detail-card b,
+html[data-theme="light"] .setting-card-admin b { color:#173638; }
+
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (max-width: 760px) {
+  .admin-mobile-menu { display:flex; }
+  .admin-route-head { padding:0 9px; gap:9px; }
+  .admin-route-head .logo-lockup { flex:1; }
+  .admin-route-head .logo-lockup strong { font-size:16px; }
+  .admin-route-head .top-actions .theme-toggle,
+  .admin-route-head .top-actions .ghost-btn { display:none; }
+  .admin-route-head .top-actions .account-chip { padding:5px; }
+  .admin-route-head .top-actions .account-chip span:nth-child(2),
+  .admin-route-head .top-actions .account-chip b { display:none; }
+  .admin-panel.standalone { overflow: visible; }
+  .admin-layout { position:relative; display:block; min-height:0; }
+  .admin-nav {
+    position:fixed;
+    z-index:120;
+    left:0;
+    top:0;
+    bottom:0;
+    width:min(292px,86vw);
+    height:100dvh;
+    border-right:1px solid #1a4b4f !important;
+    border-bottom:0 !important;
+    display:flex !important;
+    flex-direction:column;
+    justify-content:flex-start;
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding:16px 12px 20px !important;
+    background:linear-gradient(180deg,#061012 0%,#030708 78%) !important;
+    box-shadow:30px 0 90px rgba(0,0,0,.55);
+    transform:translateX(-105%);
+    transition:transform .25s ease;
+  }
+  .admin-nav.open { transform:translateX(0); }
+  .admin-nav-brand { display:flex; }
+  .admin-nav-close { display:block; }
+  .admin-nav > button {
+    flex:0 0 auto;
+    min-height:50px !important;
+    width:100%;
+    display:flex !important;
+    flex-direction:row !important;
+    justify-content:flex-start !important;
+    gap:11px !important;
+    padding:11px 12px !important;
+    font-size:9px !important;
+    white-space:nowrap;
+  }
+  .admin-nav > button span { width:22px !important; flex-basis:22px; text-align:center; }
+  .admin-nav-bottom { display:grid !important; margin-top:auto; padding-top:12px; border-top:1px solid #153438; }
+  .admin-nav-backdrop { display:block; position:fixed; z-index:110; inset:0; background:rgba(0,4,5,.62); border:0; backdrop-filter:blur(3px); }
+  .admin-content { padding:16px !important; min-width:0; }
+  .profile-detail-grid,
+  .settings-grid-admin { grid-template-columns:1fr; }
+  .profile-card-admin { align-items:flex-start; }
+  .profile-card-admin .upload-profile-btn { width:100%; }
+  .security-card { flex-direction:column; align-items:stretch; }
+  .security-card .outline-btn { width:100%; }
+}
+
+@media (max-width: 430px) {
+  .admin-route-head .logo-mark { width:36px; height:36px; }
+  .admin-route-head .logo-mark img { width:38px; }
+  .admin-route-head .logo-lockup strong { font-size:14px; }
+  .admin-page-screen { padding:82px 6px 8px; }
+  .admin-top h2 { font-size:20px; }
+}

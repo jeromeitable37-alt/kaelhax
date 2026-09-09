@@ -1,0 +1,12 @@
+KAELHAX enhanced patch
+
+Copy the files inside this zip into the matching project paths, replacing existing files when asked.
+
+Included:
+- app/page.js — admin accounts now auto-redirect to /admin after Firebase role confirmation.
+- app/admin/page.js — mobile off-canvas admin sidebar, fixed Confirm/Reject calls, Profile tab with profile photo upload + password reset, Settings tab with theme/motion preferences, improved header/account UI.
+- app/globals.css — sidebar icon spacing and new admin/profile/settings responsive styles.
+- lib/firebase-admin.js — lazy Firebase Admin initialization + robust private-key normalization and getAdminDb()/getAdminAuth()/getAdminStorage()/getAdminBucket().
+- app/api/telegram/webhook/route.js — consistent getAdminDb() usage and safer Telegram callback handling.
+
+Do NOT copy any .env files into GitHub. Keep Vercel secrets in Vercel Environment Variables.
