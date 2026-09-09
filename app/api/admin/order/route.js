@@ -4,6 +4,7 @@ import { createReceiptPng } from '../../../../lib/receipt';
 import { sendReceiptImage } from '../../../../lib/telegram';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -16,25 +17,30 @@ function escapeHtml(value) {
 
 export async function POST(request) {
   try {
-    const adminUser = await getAdminUserFromRequest(request);
-    const db = getAdminDb();
+    const body = await request.json().catch(() => null);
 
-    let body;
-    try {
-      body = await request.json();
-    } catch {
+    if (!body || typeof body !== 'object') {
       return jsonError('Invalid JSON request body.', 400);
     }
 
-    const orderId = String(body?.orderId || '').trim();
+    // Accept only a string order ID. This also catches the old UI bug where
+    // the whole order object was sent instead of order.id.
+    const orderId =
+      typeof body.orderId === 'string'
+        ? body.orderId.trim()
+        : '';
+
     const status =
-      body?.status === 'confirmed'
+      body.status === 'confirmed'
         ? 'confirmed'
-        : body?.status === 'rejected'
+        : body.status === 'rejected'
           ? 'rejected'
           : '';
 
-    if (!orderId) return jsonError('orderId is required.', 400);
+    if (!orderId) {
+      return jsonError('orderId must be a valid string.', 400);
+    }
+
     if (!status) {
       return jsonError(
         'Valid status is required: confirmed or rejected.',
@@ -42,12 +48,21 @@ export async function POST(request) {
       );
     }
 
+    // Verify the Firebase ID token and the Firestore admin role.
+    const adminUser = await getAdminUserFromRequest(request);
+    const db = getAdminDb();
+
     const orderRef = db.collection('orders').doc(orderId);
     const orderSnap = await orderRef.get();
 
-    if (!orderSnap.exists) return jsonError('Order not found.', 404);
+    if (!orderSnap.exists) {
+      return jsonError('Order not found.', 404);
+    }
 
-    const order = { id: orderSnap.id, ...orderSnap.data() };
+    const order = {
+      id: orderSnap.id,
+      ...orderSnap.data(),
+    };
 
     if (order.status !== 'pending') {
       return Response.json({
@@ -59,18 +74,21 @@ export async function POST(request) {
     }
 
     const reviewedAt = new Date();
+
     const updateData = {
       status,
       reviewedAt,
       reviewedBy: adminUser.uid,
-      updatedAt: new Date(),
+      updatedAt: reviewedAt,
     };
-
-    await orderRef.update(updateData);
 
     let receiptSent = false;
     let receiptMessageId = null;
     let telegramError = null;
+
+    // Confirm/reject the order in Firestore first so the status is never left
+    // pending just because Telegram is temporarily unavailable.
+    await orderRef.update(updateData);
 
     if (status === 'confirmed') {
       try {
@@ -82,10 +100,18 @@ export async function POST(request) {
         const caption =
           `✅ <b>Payment Confirmed</b>\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
-          `👤 User: <code>${escapeHtml(order.usernameMasked || order.userEmail || 'CUSTOMER')}</code>\n` +
-          `📦 Product: <b>${escapeHtml(order.productName || 'NEXORIUM Product')}</b>\n` +
-          `⏳ Duration: ${escapeHtml(order.duration || order.productVersion || 'N/A')}</b>\n` +
-          `💰 Amount Paid: <b>${escapeHtml(order.amount || '—')} Credits</b>\n` +
+          `👤 User: <code>${escapeHtml(
+            order.usernameMasked || order.userEmail || 'CUSTOMER'
+          )}</code>\n` +
+          `📦 Product: <b>${escapeHtml(
+            order.productName || 'NEXORIUM Product'
+          )}</b>\n` +
+          `⏳ Duration: ${escapeHtml(
+            order.duration || order.productVersion || 'N/A'
+          )}\n` +
+          `💰 Amount Paid: <b>${escapeHtml(
+            order.amount || '—'
+          )} Credits</b>\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
           `🆔 Order: <code>${escapeHtml(orderId)}</code>`;
 
@@ -96,7 +122,7 @@ export async function POST(request) {
           order.deliveryUrl || ''
         );
 
-        receiptMessageId = message?.message_id || null;
+        receiptMessageId = message?.message_id ?? null;
         receiptSent = Boolean(receiptMessageId);
 
         if (receiptMessageId) {
@@ -107,7 +133,9 @@ export async function POST(request) {
         }
       } catch (error) {
         telegramError =
-          error instanceof Error ? error.message : String(error);
+          error instanceof Error
+            ? error.message
+            : String(error);
         console.error('Telegram receipt error:', error);
       }
     }
