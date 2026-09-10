@@ -755,3 +755,19 @@ html[data-theme="light"] .pricing-empty{color:#597577}
   .product-media-actions{flex-direction:column}
   .product-media-actions .upload-small,.product-media-actions .outline-btn{width:100%;min-width:0}
 }
+/* USER SIDEBAR ONLY — icon/text spacing */
+.sidebar .side-item .ico{
+  width:20px;
+  min-width:20px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 20px;
+  margin-right:10px;
+  line-height:1;
+}
+
+.sidebar .side-item > span:not(.ico){
+  display:block;
+  line-height:1.2;
+}
