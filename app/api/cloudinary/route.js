@@ -3,119 +3,49 @@ import crypto from 'node:crypto';
 export const runtime = 'nodejs';
 
 function getFirebaseConfig() {
-  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n').trim();
+  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_WEB_API_KEY;
-
   const missing = [
-    !projectId ? 'FIREBASE_ADMIN_PROJECT_ID' : '',
-    !clientEmail ? 'FIREBASE_ADMIN_CLIENT_EMAIL' : '',
-    !privateKey ? 'FIREBASE_ADMIN_PRIVATE_KEY' : '',
-    !apiKey ? 'NEXT_PUBLIC_FIREBASE_API_KEY (or FIREBASE_WEB_API_KEY)' : '',
+    !projectId ? 'FIREBASE_ADMIN_PROJECT_ID/NEXT_PUBLIC_FIREBASE_PROJECT_ID' : '',
+    !apiKey ? 'NEXT_PUBLIC_FIREBASE_API_KEY/FIREBASE_WEB_API_KEY' : '',
   ].filter(Boolean);
-
   if (missing.length) {
-    const error = new Error(`Firebase server configuration is incomplete. Missing: ${missing.join(', ')}`);
+    const error = new Error(`Firebase configuration is incomplete. Missing: ${missing.join(', ')}`);
     error.code = 'FIREBASE_CONFIG_MISSING';
     throw error;
   }
-
-  return { projectId, clientEmail, privateKey, apiKey };
+  return { projectId, apiKey };
 }
 
-function base64UrlEncode(value) {
-  return Buffer.from(value)
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
-}
-
-function createServiceAccountAssertion({ clientEmail, privateKey, scope }) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const payload = base64UrlEncode(JSON.stringify({
-    iss: clientEmail,
-    scope,
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600,
-  }));
-  const unsigned = `${header}.${payload}`;
-  const signer = crypto.createSign('RSA-SHA256');
-  signer.update(unsigned);
-  signer.end();
-  const signature = signer.sign(privateKey);
-  return `${unsigned}.${base64UrlEncode(signature)}`;
-}
-
-async function getGoogleAccessToken() {
-  const { clientEmail, privateKey } = getFirebaseConfig();
-  const assertion = createServiceAccountAssertion({
-    clientEmail,
-    privateKey,
-    scope: 'https://www.googleapis.com/auth/datastore',
-  });
-
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion,
-    }),
-    cache: 'no-store',
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.access_token) {
-    throw new Error(payload?.error_description || payload?.error || `Google OAuth token request failed (HTTP ${response.status}).`);
+function getCloudinaryConfig() {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const missing = [
+    !cloudName ? 'CLOUDINARY_CLOUD_NAME' : '',
+    !apiKey ? 'CLOUDINARY_API_KEY' : '',
+    !apiSecret ? 'CLOUDINARY_API_SECRET' : '',
+  ].filter(Boolean);
+  if (missing.length) {
+    const error = new Error(`Cloudinary is not configured on this deployment. Missing: ${missing.join(', ')}`);
+    error.code = 'CLOUDINARY_CONFIG_MISSING';
+    throw error;
   }
-  return payload.access_token;
+  return { cloudName, apiKey, apiSecret };
 }
 
-async function getFirestoreUser(uid) {
-  const { projectId } = getFirebaseConfig();
-  const accessToken = await getGoogleAccessToken();
-  const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
-  const response = await fetch(endpoint, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    cache: 'no-store',
-  });
-  const payload = await response.json().catch(() => null);
-  if (response.status === 404) return {};
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || `Firestore request failed (HTTP ${response.status}).`);
-  }
-  return firestoreFieldsToObject(payload?.fields || {});
+function bearerToken(request) {
+  const header = request.headers.get('authorization') || '';
+  return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
 }
 
-function firestoreValueToJs(value) {
-  if (!value || typeof value !== 'object') return value;
-  if ('stringValue' in value) return value.stringValue;
-  if ('booleanValue' in value) return value.booleanValue;
-  if ('integerValue' in value) return Number(value.integerValue);
-  if ('doubleValue' in value) return Number(value.doubleValue);
-  if ('timestampValue' in value) return value.timestampValue;
-  if ('nullValue' in value) return null;
-  if ('referenceValue' in value) return value.referenceValue;
-  if ('bytesValue' in value) return value.bytesValue;
-  if ('geoPointValue' in value) return value.geoPointValue;
-  if ('arrayValue' in value) return (value.arrayValue?.values || []).map(firestoreValueToJs);
-  if ('mapValue' in value) return firestoreFieldsToObject(value.mapValue?.fields || {});
-  return undefined;
-}
-
-function firestoreFieldsToObject(fields) {
-  return Object.fromEntries(
-    Object.entries(fields || {}).map(([key, value]) => [key, firestoreValueToJs(value)])
-  );
-}
-
-async function requireUser(request) {
+async function verifyFirebaseToken(request) {
   const token = bearerToken(request);
-  if (!token) throw new Error('Missing Firebase authentication token.');
+  if (!token) {
+    const error = new Error('Missing Firebase authentication token.');
+    error.code = 'AUTH_MISSING';
+    throw error;
+  }
 
   const { apiKey } = getFirebaseConfig();
   const response = await fetch(
@@ -125,72 +55,68 @@ async function requireUser(request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken: token }),
       cache: 'no-store',
-    }
+    },
   );
+
   const payload = await response.json().catch(() => null);
-
-  if (!response.ok || !Array.isArray(payload?.users) || !payload.users[0]?.localId) {
-    throw new Error(payload?.error?.message || 'Invalid or expired Firebase authentication token.');
-  }
-
-  return { decoded: { uid: payload.users[0].localId, email: payload.users[0].email || '' } };
-}
-
-async function requireAdmin(request) {
-  const { decoded } = await requireUser(request);
-  const profile = await getFirestoreUser(decoded.uid);
-
-  if (profile?.role !== 'admin' || profile?.disabled === true) {
-    throw new Error('Administrator access required.');
-  }
-
-  return { decoded, profile };
-}
-
-function getCloudinaryConfig() {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
-
-  if (!cloudName || !apiKey || !apiSecret) {
-    const missing = [
-      !cloudName ? 'CLOUDINARY_CLOUD_NAME' : '',
-      !apiKey ? 'CLOUDINARY_API_KEY' : '',
-      !apiSecret ? 'CLOUDINARY_API_SECRET' : '',
-    ].filter(Boolean);
-    const error = new Error(`Cloudinary is not configured on this deployment. Missing: ${missing.join(', ')}`);
-    error.code = 'CLOUDINARY_CONFIG_MISSING';
+  const uid = payload?.users?.[0]?.localId;
+  if (!response.ok || !uid) {
+    const error = new Error(payload?.error?.message || 'Firebase token verification failed.');
+    error.code = 'AUTH_INVALID';
     throw error;
   }
 
-  return { cloudName, apiKey, apiSecret };
+  return { uid, token };
 }
 
-function bearerToken(request) {
-  const header = request.headers.get('authorization') || '';
-  return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+async function getUserProfile(uid, token) {
+  const { projectId } = getFirebaseConfig();
+  const endpoint =
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}` +
+    `/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
+
+  const response = await fetch(endpoint, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+
+  if (response.status === 404) return {};
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Firestore profile lookup failed (HTTP ${response.status}).`);
+  }
+
+  const fields = payload?.fields || {};
+  const readField = (name) => {
+    const value = fields[name];
+    if (!value) return undefined;
+    if (value.stringValue !== undefined) return value.stringValue;
+    if (value.booleanValue !== undefined) return value.booleanValue;
+    if (value.integerValue !== undefined) return Number(value.integerValue);
+    if (value.doubleValue !== undefined) return value.doubleValue;
+    return undefined;
+  };
+
+  return {
+    role: readField('role'),
+    disabled: readField('disabled'),
+  };
 }
 
 async function requireUser(request) {
-  const token = bearerToken(request);
-  if (!token) throw new Error('Missing Firebase authentication token.');
-
-  const app = getFirebaseAdminApp();
-  const decoded = await getAuth(app).verifyIdToken(token);
-  return { app, decoded };
+  const auth = await verifyFirebaseToken(request);
+  const profile = await getUserProfile(auth.uid, auth.token);
+  return { ...auth, profile };
 }
 
 async function requireAdmin(request) {
-  const { app, decoded } = await requireUser(request);
-  const db = getFirestore(app);
-  const snap = await db.collection('users').doc(decoded.uid).get();
-  const profile = snap.exists ? snap.data() : {};
-
-  if (profile?.role !== 'admin' || profile?.disabled === true) {
-    throw new Error('Administrator access required.');
+  const auth = await requireUser(request);
+  if (auth.profile?.role !== 'admin' || auth.profile?.disabled === true) {
+    const error = new Error('Administrator access required.');
+    error.code = 'ADMIN_REQUIRED';
+    throw error;
   }
-
-  return { app, decoded, db };
+  return auth;
 }
 
 function signCloudinaryParams(params, apiSecret) {
@@ -199,19 +125,12 @@ function signCloudinaryParams(params, apiSecret) {
     .sort()
     .map((key) => `${key}=${params[key]}`)
     .join('&');
-
-  return crypto
-    .createHash('sha1')
-    .update(`${serialized}${apiSecret}`)
-    .digest('hex');
+  return crypto.createHash('sha1').update(`${serialized}${apiSecret}`).digest('hex');
 }
 
 function validateFolder(folder, uid, isAdmin) {
   const normalized = String(folder || '').replace(/\\/g, '/').replace(/\/+$/, '');
-
-  if (!normalized.startsWith('kaelhax/')) {
-    throw new Error('Invalid Cloudinary folder.');
-  }
+  if (!normalized.startsWith('kaelhax/')) throw new Error('Invalid Cloudinary folder.');
 
   const isOwnProfile = normalized === `kaelhax/profiles/${uid}`;
   const isProductLibrary = isAdmin && normalized === 'kaelhax/products';
@@ -220,14 +139,13 @@ function validateFolder(folder, uid, isAdmin) {
   if (!isOwnProfile && !isProductLibrary && !isPaymentAsset) {
     throw new Error('You are not allowed to upload to this Cloudinary folder.');
   }
-
   return normalized;
 }
 
 function jsonError(error, status = 500) {
   return Response.json(
     { ok: false, error: error?.message || 'Cloudinary request failed.' },
-    { status }
+    { status },
   );
 }
 
@@ -237,18 +155,12 @@ export async function GET(request) {
     const action = url.searchParams.get('action') || 'images';
 
     if (action === 'signature') {
-      const { decoded } = await requireUser(request);
-      const profile = await getFirestoreUser(decoded.uid);
-      const isAdmin = profile?.role === 'admin' && profile?.disabled !== true;
+      const { uid, profile } = await requireUser(request);
       const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
-      const folder = validateFolder(url.searchParams.get('folder'), decoded.uid, isAdmin);
+      const isAdmin = profile?.role === 'admin' && profile?.disabled !== true;
+      const folder = validateFolder(url.searchParams.get('folder'), uid, isAdmin);
       const timestamp = Math.floor(Date.now() / 1000);
-      const params = {
-        folder,
-        public_id_prefix: folder,
-        tags: 'kaelhax',
-        timestamp,
-      };
+      const params = { folder, public_id_prefix: folder, tags: 'kaelhax', timestamp };
 
       return Response.json({
         ok: true,
@@ -265,9 +177,8 @@ export async function GET(request) {
     await requireAdmin(request);
     const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
     const search = (url.searchParams.get('search') || '').trim().toLowerCase();
-
     const endpoint = new URL(
-      `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/resources/image/upload`
+      `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/resources/image/upload`,
     );
     endpoint.searchParams.set('prefix', 'kaelhax/products/');
     endpoint.searchParams.set('max_results', '100');
@@ -311,12 +222,13 @@ export async function GET(request) {
 
     return Response.json({ ok: true, assets });
   } catch (error) {
-    const message = error?.message || 'Cloudinary request failed.';
     const status =
       error?.code === 'CLOUDINARY_CONFIG_MISSING' || error?.code === 'FIREBASE_CONFIG_MISSING' ? 503 :
-      /authentication|token|invalid or expired/i.test(message) ? 401 :
-      /missing|required/i.test(message) ? 400 :
+      error?.code === 'AUTH_MISSING' || error?.code === 'AUTH_INVALID' ? 401 :
+      error?.code === 'ADMIN_REQUIRED' ? 403 :
       500;
+
+    console.error('Cloudinary API error:', error);
     return jsonError(error, status);
   }
 }
