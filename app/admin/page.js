@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { sendPasswordResetEmail } from 'firebase/auth';
-import { getCloudinaryImages, uploadToCloudinary } from '../../lib/cloudinary-client';
 
 import {
   auth,
@@ -109,7 +108,6 @@ const ADMIN_TABS = [
   ['overview', '◈', 'Overview'],
   ['content', '✦', 'Content'],
   ['products', '▦', 'Products'],
-  ['media', '▧', 'Media'],
   ['payments', '₱', 'Payments'],
   ['orders', '◉', 'Orders'],
   ['accounts', '◎', 'Users'],
@@ -147,18 +145,6 @@ function sanitizeForFirestore(value, nestedArray = false) {
 
   return value;
 }
-
-function removeTransientBlobUrls(value) {
-  if (typeof value === 'string') return value.startsWith('blob:') ? '' : value;
-  if (Array.isArray(value)) return value.map(removeTransientBlobUrls);
-  if (value && typeof value === 'object') {
-    const output = {};
-    for (const [key, item] of Object.entries(value)) output[key] = removeTransientBlobUrls(item);
-    return output;
-  }
-  return value;
-}
-
 
 function mergeData(parsed) {
   return {
@@ -226,15 +212,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
 
   const [tab, setTab] = useState('overview');
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [adminMenu, setAdminMenu] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [uploadingProductIndex, setUploadingProductIndex] = useState(null);
-  const [productPreviews, setProductPreviews] = useState({});
-  const [mediaAssets, setMediaAssets] = useState([]);
-  const [mediaSearch, setMediaSearch] = useState('');
-  const [mediaLoading, setMediaLoading] = useState(false);
-  const [mediaOpen, setMediaOpen] = useState(false);
-  const [mediaTargetIndex, setMediaTargetIndex] = useState(null);
   const [message, setMessage] = useState('');
 
   const [qrPreview, setQrPreview] = useState(
@@ -280,19 +259,6 @@ export default function AdminPage() {
       );
     } catch {}
   }, [theme]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    const handleResize = () => { if (window.innerWidth > 760) setMobileNavOpen(false); };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    if (tab === 'media' && isAdmin) loadMediaLibrary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, isAdmin]);
 
   /*
    * ---------------------------------------------------------
@@ -602,7 +568,34 @@ export default function AdminPage() {
   }
 
   async function uploadImage(file, folder) {
-    return uploadToCloudinary(file, `kaelhax/${folder}`);
+    if (!file || !storage || !me) {
+      throw new Error('Firebase Storage is not available for this upload.');
+    }
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const uniqueId = typeof crypto?.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const objectRef = ref(
+      storage,
+      `${folder}/${me.uid}/${Date.now()}-${uniqueId}-${safeName}`
+    );
+
+    await withTimeout(
+      uploadBytes(objectRef, file, {
+        contentType: file.type || 'image/jpeg',
+        cacheControl: 'public,max-age=31536000,immutable',
+      }),
+      30000,
+      'Image upload'
+    );
+
+    return withTimeout(
+      getDownloadURL(objectRef),
+      15000,
+      'Getting image URL'
+    );
   }
 
   /*
@@ -617,7 +610,7 @@ export default function AdminPage() {
     setBusy(true);
 
     try {
-      const firestoreData = sanitizeForFirestore(removeTransientBlobUrls(data));
+      const firestoreData = sanitizeForFirestore(data);
 
       await withTimeout(
         setDoc(
@@ -640,169 +633,6 @@ export default function AdminPage() {
       setBusy(false);
     }
   }
-
-  async function compressProductImage(file) {
-    if (!file) return '';
-
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const image = new Image();
-        image.onload = () => {
-          const maxWidth = 768;
-          const scale = Math.min(1, maxWidth / image.width);
-          const width = Math.max(1, Math.round(image.width * scale));
-          const height = Math.max(1, Math.round(image.height * scale));
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('Could not process product image.'));
-            return;
-          }
-          ctx.drawImage(image, 0, 0, width, height);
-
-          let quality = 0.58;
-          let result = canvas.toDataURL('image/jpeg', quality);
-          while (result.length > 90000 && quality > 0.35) {
-            quality -= 0.05;
-            result = canvas.toDataURL('image/jpeg', quality);
-          }
-
-          if (result.length > 120000) {
-            reject(new Error('Product image is too large after compression.'));
-            return;
-          }
-
-          resolve(result);
-        };
-        image.onerror = () => reject(new Error('Could not read the product image.'));
-        image.src = String(reader.result);
-      };
-      reader.onerror = () => reject(new Error('Could not read the product image file.'));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function publishProductImage(index, file) {
-    if (!file || !db || !isAdmin) return;
-
-    setUploadingProductIndex(index);
-    const previewUrl = URL.createObjectURL(file);
-
-    try {
-      setProductPreviews((prev) => ({ ...prev, [index]: previewUrl }));
-
-      const uploaded = await uploadImage(file, 'products');
-      const currentProducts = Array.isArray(data.products) ? data.products : [];
-      const current = currentProducts[index] || {};
-      const productId = String(current.id || `product-${index + 1}`);
-      const imageVersion = Date.now();
-
-      const updatedProducts = currentProducts.map((item, itemIndex) =>
-        itemIndex === index
-          ? {
-              ...item,
-              id: productId,
-              image: uploaded.secureUrl,
-              imagePublicId: uploaded.publicId,
-              imageVersion,
-            }
-          : item
-      );
-
-      await withTimeout(
-        setDoc(
-          doc(db, 'site', 'config'),
-          {
-            products: sanitizeForFirestore(updatedProducts),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        ),
-        20000,
-        'Publishing Cloudinary product image'
-      );
-
-      setData((prev) => ({
-        ...prev,
-        products: prev.products.map((item, itemIndex) =>
-          itemIndex === index
-            ? {
-                ...item,
-                id: productId,
-                image: uploaded.secureUrl,
-                imagePublicId: uploaded.publicId,
-                imageVersion,
-              }
-            : item
-        ),
-      }));
-
-      flash('✓ Product image uploaded to Cloudinary and published.');
-      await loadMediaLibrary();
-    } catch (error) {
-      console.error('Cloudinary product image failed:', error);
-      flash(error?.message || 'Product image upload failed.');
-    } finally {
-      URL.revokeObjectURL(previewUrl);
-      setProductPreviews((prev) => {
-        const next = { ...prev };
-        delete next[index];
-        return next;
-      });
-      setUploadingProductIndex(null);
-    }
-  }
-
-  async function loadMediaLibrary(search = mediaSearch) {
-    if (!isAdmin) return;
-    setMediaLoading(true);
-    try {
-      const assets = await getCloudinaryImages(search);
-      setMediaAssets(assets);
-    } catch (error) {
-      console.error('Cloudinary media library failed:', error);
-      flash(error?.message || 'Could not load the image library.');
-    } finally {
-      setMediaLoading(false);
-    }
-  }
-
-  async function openMediaPicker(index = null) {
-    setMediaTargetIndex(index);
-    setMediaOpen(true);
-    await loadMediaLibrary();
-  }
-
-  function selectMediaAsset(asset) {
-    if (mediaTargetIndex === null || mediaTargetIndex === undefined) {
-      setMediaOpen(false);
-      return;
-    }
-
-    const index = mediaTargetIndex;
-    const imageVersion = Date.now();
-
-    setData((prev) => ({
-      ...prev,
-      products: prev.products.map((product, itemIndex) =>
-        itemIndex === index
-          ? {
-              ...product,
-              image: asset.secureUrl,
-              imagePublicId: asset.publicId,
-              imageVersion,
-            }
-          : product
-      ),
-    }));
-
-    setMediaOpen(false);
-    flash('Image selected. Click SAVE PRODUCTS to publish this change.');
-  }
-
 
   /*
    * ---------------------------------------------------------
@@ -1016,30 +846,37 @@ export default function AdminPage() {
    */
 
   async function uploadProfilePicture(file) {
-    if (!file || !me || !isAdmin || !db) return;
+    if (!file || !storage || !me || !isAdmin) return;
 
     setBusy(true);
 
     try {
-      const uploaded = await uploadImage(file, `profiles/${me.uid}`);
-      const url = uploaded.secureUrl;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const objectRef = ref(
+        storage,
+        `profiles/${me.uid}/${Date.now()}-${safeName}`
+      );
+
+      await uploadBytes(objectRef, file, {
+        contentType: file.type || 'image/*',
+      });
+
+      const url = await getDownloadURL(objectRef);
 
       const { updateProfile } = await import('firebase/auth');
       await updateProfile(me, { photoURL: url });
 
       await updateDoc(doc(db, 'users', me.uid), {
         photoURL: url,
-        photoURLPublicId: uploaded.publicId,
         updatedAt: serverTimestamp(),
       });
 
       setProfile((prev) => ({
         ...(prev || {}),
         photoURL: url,
-        photoURLPublicId: uploaded.publicId,
       }));
 
-      flash('Profile picture updated with Cloudinary.');
+      flash('Profile picture updated.');
     } catch (error) {
       console.error('Profile picture upload failed:', error);
       flash(error?.message || 'Profile picture upload failed.');
@@ -1420,13 +1257,6 @@ export default function AdminPage() {
       {/* TOP HEADER */}
       <header className="admin-route-head">
 
-        <button type="button" className="admin-mobile-menu"
-          aria-label={mobileNavOpen ? 'Close admin navigation' : 'Open admin navigation'}
-          aria-expanded={mobileNavOpen}
-          onClick={() => setMobileNavOpen((open) => !open)}>
-          <span></span><span></span><span></span>
-        </button>
-
         <a
           href="/"
           className="logo-lockup"
@@ -1488,11 +1318,13 @@ export default function AdminPage() {
             type="button"
           >
             <span className="account-avatar">
-              {profile?.photoURL || me?.photoURL ? (
-                <img src={profile?.photoURL || me?.photoURL} alt="Admin profile" className="account-avatar-image" />
-              ) : (
-                (me?.displayName || me?.email || 'A').slice(0, 1).toUpperCase()
-              )}
+              {(
+                me.displayName ||
+                me.email ||
+                'A'
+              )
+                .slice(0, 1)
+                .toUpperCase()}
             </span>
 
             <span>
@@ -1514,6 +1346,16 @@ export default function AdminPage() {
 
           {/* PANEL HEADER */}
           <div className="admin-top">
+
+            <button
+              className="admin-mobile-menu"
+              type="button"
+              aria-label="Toggle admin navigation"
+              aria-expanded={adminMenu}
+              onClick={() => setAdminMenu((value) => !value)}
+            >
+              ☰
+            </button>
 
             <div>
               <span className="eyebrow">
@@ -1555,15 +1397,20 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* ADMIN LAYOUT */}
-          <div className="admin-layout">
+          {adminMenu && (
+            <button
+              className="admin-nav-backdrop"
+              type="button"
+              aria-label="Close admin navigation"
+              onClick={() => setAdminMenu(false)}
+            />
+          )}
 
-            {mobileNavOpen && (
-              <button type="button" className="admin-sidebar-backdrop" aria-label="Close admin navigation" onClick={() => setMobileNavOpen(false)} />
-            )}
+          {/* ADMIN LAYOUT */}
+          <div className={`admin-layout ${adminMenu ? 'admin-menu-open' : ''}`}>
 
             {/* NAVIGATION */}
-            <nav className={`admin-nav ${mobileNavOpen ? 'open' : ''}`}>
+            <nav className="admin-nav">
 
               {ADMIN_TABS.map(
                 ([key, icon, label]) => (
@@ -1577,7 +1424,7 @@ export default function AdminPage() {
                     }
                     onClick={() => {
                       setTab(key);
-                      setMobileNavOpen(false);
+                      setAdminMenu(false);
                     }}
                   >
                     <span>
@@ -1953,7 +1800,7 @@ export default function AdminPage() {
 
                           <img
                             src={
-                              productPreviews[index] || product.image ||
+                              product.image ||
                               '/panel-showcase.png'
                             }
                             alt={product.name || 'Product image'}
@@ -2117,16 +1964,77 @@ export default function AdminPage() {
                               )}
                             </div>
 
-                            <div className="product-media-actions">
-                              <label className="upload-small">
-                                {uploadingProductIndex === index ? 'UPLOADING…' : 'UPLOAD TO CLOUDINARY'}
-                                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploadingProductIndex === index}
-                                  onChange={(e) => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (file) publishProductImage(index, file); }} />
-                              </label>
-                              <button className="outline-btn" type="button" onClick={() => openMediaPicker(index)} disabled={uploadingProductIndex === index}>
-                                SELECT FROM LIBRARY
-                              </button>
-                            </div>
+                            <label className="upload-small">
+                              UPLOAD IMAGE
+
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={async (e) => {
+                                  const input = e.currentTarget;
+                                  const file = input.files?.[0];
+                                  input.value = '';
+                                  if (!file) return;
+
+                                  setBusy(true);
+                                  try {
+                                    const url = await uploadImage(file, 'products');
+                                    const productId = String(product.id || `product-${index + 1}`);
+                                    const imageVersion = Date.now();
+
+                                    // Build the complete product list from the CURRENT admin state.
+                                    // This is important for newly-created products that do not exist
+                                    // in Firestore yet. The old implementation only mapped existing
+                                    // cloud products, so a new product could lose its uploaded image.
+                                    const updatedProducts = data.products.map((currentProduct, currentIndex) =>
+                                      currentIndex === index
+                                        ? {
+                                            ...currentProduct,
+                                            id: productId,
+                                            image: url,
+                                            imageVersion,
+                                          }
+                                        : currentProduct
+                                    );
+
+                                    const configRef = doc(db, 'site', 'config');
+                                    await withTimeout(
+                                      setDoc(
+                                        configRef,
+                                        {
+                                          products: sanitizeForFirestore(updatedProducts),
+                                          updatedAt: serverTimestamp(),
+                                        },
+                                        { merge: true }
+                                      ),
+                                      20000,
+                                      'Publishing product image'
+                                    );
+
+                                    setData((prev) => ({
+                                      ...prev,
+                                      products: prev.products.map((currentProduct, currentIndex) =>
+                                        currentIndex === index
+                                          ? {
+                                              ...currentProduct,
+                                              id: productId,
+                                              image: url,
+                                              imageVersion,
+                                            }
+                                          : currentProduct
+                                      ),
+                                    }));
+
+                                    flash('✓ Product image uploaded and saved to Firebase.');
+                                  } catch (error) {
+                                    console.error('Product image publish failed:', error);
+                                    flash(error?.message || 'Product image upload failed.');
+                                  } finally {
+                                    setBusy(false);
+                                  }
+                                }}
+                              />
+                            </label>
 
                           </div>
 
@@ -2151,7 +2059,7 @@ export default function AdminPage() {
                   <button
                     className="primary-btn big save-btn"
                     onClick={saveSite}
-                    disabled={busy || uploadingProductIndex !== null}
+                    disabled={busy}
                     type="button"
                   >
                     {busy
@@ -2161,84 +2069,6 @@ export default function AdminPage() {
 
                 </div>
               )}
-
-              {tab === 'media' && (
-                <div className="admin-page">
-                  <div className="admin-section-title">
-                    <div>
-                      <span className="eyebrow">// CLOUDINARY MEDIA LIBRARY</span>
-                      <h3>Image Library</h3>
-                      <p>Upload once, then select the permanent image for any product.</p>
-                    </div>
-                    <div className="media-head-actions">
-                      <label className="primary-btn media-upload-btn">
-                        + UPLOAD IMAGE
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp,image/gif"
-                          onChange={async (event) => {
-                            const file = event.currentTarget.files?.[0];
-                            event.currentTarget.value = '';
-                            if (!file) return;
-                            try {
-                              await uploadImage(file, 'products');
-                              flash('✓ Image added to Cloudinary library.');
-                              await loadMediaLibrary();
-                            } catch (error) {
-                              flash(error?.message || 'Image upload failed.');
-                            }
-                          }}
-                        />
-                      </label>
-                      <button className="outline-btn" type="button" onClick={() => loadMediaLibrary()} disabled={mediaLoading}>
-                        {mediaLoading ? 'LOADING…' : 'REFRESH'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="media-toolbar">
-                    <input
-                      value={mediaSearch}
-                      onChange={(event) => setMediaSearch(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') loadMediaLibrary(event.currentTarget.value);
-                      }}
-                      placeholder="Search image name, format, or tag…"
-                    />
-                    <button className="outline-btn" type="button" onClick={() => loadMediaLibrary(mediaSearch)}>
-                      SEARCH
-                    </button>
-                  </div>
-
-                  {mediaLoading ? (
-                    <div className="media-empty">LOADING CLOUDINARY LIBRARY…</div>
-                  ) : mediaAssets.length ? (
-                    <div className="media-grid-admin">
-                      {mediaAssets.map((asset) => (
-                        <article className="media-card-admin" key={asset.publicId}>
-                          <div className="media-thumb-admin">
-                            <img src={asset.secureUrl} alt={asset.displayName || asset.publicId} />
-                          </div>
-                          <div className="media-card-body">
-                            <b title={asset.displayName}>{asset.displayName}</b>
-                            <small>{asset.format?.toUpperCase() || 'IMAGE'} · {asset.width || '?'}×{asset.height || '?'}</small>
-                            <button className="outline-btn" type="button" onClick={() => navigator.clipboard?.writeText(asset.secureUrl).then(() => flash('Image URL copied.')).catch(() => flash('Could not copy image URL.'))}>
-                              COPY URL
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="media-empty">
-                      <b>NO IMAGES YET</b>
-                      <span>Upload a product image to create your Cloudinary library.</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-
 
               {/* -------------------------------------------------
                   PAYMENTS
@@ -2744,40 +2574,6 @@ export default function AdminPage() {
 
             </div>
           </div>
-
-          {mediaOpen && (
-            <div className="media-modal-backdrop" onClick={() => setMediaOpen(false)}>
-              <div className="media-modal" onClick={(event) => event.stopPropagation()}>
-                <div className="media-modal-head">
-                  <div>
-                    <span className="eyebrow">// SELECT ASSET</span>
-                    <h3>Cloudinary Image Library</h3>
-                  </div>
-                  <button className="modal-x" type="button" onClick={() => setMediaOpen(false)}>×</button>
-                </div>
-                <div className="media-toolbar compact">
-                  <input value={mediaSearch} onChange={(event) => setMediaSearch(event.target.value)} placeholder="Search…" />
-                  <button className="outline-btn" type="button" onClick={() => loadMediaLibrary(mediaSearch)}>SEARCH</button>
-                </div>
-                <div className="media-grid-admin picker">
-                  {mediaAssets.map((asset) => (
-                    <article className="media-card-admin" key={asset.publicId}>
-                      <button className="media-select-card" type="button" onClick={() => selectMediaAsset(asset)}>
-                        <div className="media-thumb-admin"><img src={asset.secureUrl} alt={asset.displayName || asset.publicId} /></div>
-                        <div className="media-card-body">
-                          <b title={asset.displayName}>{asset.displayName}</b>
-                          <small>{asset.format?.toUpperCase() || 'IMAGE'} · {asset.width || '?'}×{asset.height || '?'}</small>
-                          <span>SELECT IMAGE →</span>
-                        </div>
-                      </button>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-
 
           {/* FOOTER */}
           <div className="admin-footer">
