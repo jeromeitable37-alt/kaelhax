@@ -555,24 +555,6 @@ export default function Home() {
   const [showMyOrders, setShowMyOrders] =
     useState(false);
 
-  const [showFeedback, setShowFeedback] =
-    useState(false);
-
-  const [feedbackOrderId, setFeedbackOrderId] =
-    useState('');
-
-  const [feedbackRating, setFeedbackRating] =
-    useState(5);
-
-  const [feedbackText, setFeedbackText] =
-    useState('');
-
-  const [myFeedback, setMyFeedback] =
-    useState([]);
-
-  const [feedbackBusy, setFeedbackBusy] =
-    useState(false);
-
   const [receiptFile, setReceiptFile] =
     useState(null);
 
@@ -1120,76 +1102,6 @@ export default function Home() {
   }, [
     currentUser?.uid,
   ]);
-
-
-  /*
-   * =========================================================
-   * CUSTOMER FEEDBACK
-   * =========================================================
-   */
-
-  useEffect(() => {
-    if (!currentUser?.uid) {
-      setMyFeedback([]);
-      return undefined;
-    }
-
-    const localKey = `kaelhax-feedback-${currentUser.uid}`;
-
-    try {
-      const stored = JSON.parse(
-        localStorage.getItem(localKey) || '[]'
-      );
-
-      if (Array.isArray(stored)) {
-        setMyFeedback(stored);
-      }
-    } catch {
-      setMyFeedback([]);
-    }
-
-    if (!firebaseConfigured || !db || !user) {
-      return undefined;
-    }
-
-    const feedbackRef = collection(
-      db,
-      'users',
-      currentUser.uid,
-      'feedback'
-    );
-
-    return onSnapshot(
-      feedbackRef,
-      (snap) => {
-        const next = snap.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
-
-        next.sort((a, b) => {
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
-
-          if (aTime || bTime) {
-            return bTime - aTime;
-          }
-
-          return String(b.createdAt || '').localeCompare(
-            String(a.createdAt || '')
-          );
-        });
-
-        setMyFeedback(next);
-      },
-      (error) => {
-        console.error(
-          'Could not read own feedback:',
-          error
-        );
-      }
-    );
-  }, [currentUser?.uid, user]);
 
 
   /*
@@ -2431,104 +2343,6 @@ export default function Home() {
 
   /*
    * =========================================================
-   * SUBMIT CUSTOMER FEEDBACK
-   * =========================================================
-   */
-
-  async function submitFeedback() {
-    if (!currentUser?.uid) {
-      flash('Please sign in to leave feedback.');
-      return;
-    }
-
-    const purchasedOrder = myOrders.find(
-      (order) =>
-        order.id === feedbackOrderId &&
-        order.status === 'confirmed'
-    );
-
-    if (!purchasedOrder) {
-      flash('Select a confirmed purchase first.');
-      return;
-    }
-
-    const message = feedbackText.trim();
-
-    if (!message) {
-      flash('Please write your feedback first.');
-      return;
-    }
-
-    if (message.length > 1000) {
-      flash('Feedback must be 1000 characters or less.');
-      return;
-    }
-
-    if (myFeedback.some((item) => item.orderId === purchasedOrder.id)) {
-      flash('You already submitted feedback for this order.');
-      return;
-    }
-
-    const entry = {
-      orderId: purchasedOrder.id,
-      productName: purchasedOrder.productName || 'NEXORIUM Product',
-      rating: Math.min(5, Math.max(1, Number(feedbackRating) || 5)),
-      message,
-      userId: currentUser.uid,
-      userName: accountLabel,
-      verifiedPurchase: true,
-      createdAt: new Date().toISOString(),
-    };
-
-    try {
-      setFeedbackBusy(true);
-
-      if (firebaseConfigured && db && user) {
-        await addDoc(
-          collection(
-            db,
-            'users',
-            user.uid,
-            'feedback'
-          ),
-          {
-            ...entry,
-            createdAt: serverTimestamp(),
-          }
-        );
-      } else {
-        const localKey = `kaelhax-feedback-${currentUser.uid}`;
-        const existing = Array.isArray(myFeedback)
-          ? myFeedback
-          : [];
-
-        const next = [entry, ...existing];
-        localStorage.setItem(localKey, JSON.stringify(next));
-        setMyFeedback(next);
-      }
-
-      setFeedbackOrderId('');
-      setFeedbackRating(5);
-      setFeedbackText('');
-      flash('Feedback submitted successfully.');
-    } catch (error) {
-      console.error(
-        'Feedback submission failed:',
-        error
-      );
-
-      flash(
-        error?.message ||
-          'Could not submit feedback.'
-      );
-    } finally {
-      setFeedbackBusy(false);
-    }
-  }
-
-
-  /*
-   * =========================================================
    * CREATE FIRESTORE ORDER
    *
    * NO STORAGE REQUIRED FOR RECEIPT.
@@ -3021,10 +2835,21 @@ export default function Home() {
    */
 
   function openCheckout(
-    product
+    product,
+    priceOption = null
   ) {
+    const selectedProduct =
+      priceOption
+        ? {
+            ...product,
+            price: priceOption.price || product.price || 'FREE',
+            selectedPriceLabel: priceOption.label || '',
+            selectedPriceSlots: priceOption.slots || '',
+          }
+        : product;
+
     setCheckout(
-      product
+      selectedProduct
     );
 
     setPaymentStep(
@@ -3427,33 +3252,6 @@ export default function Home() {
           </button>
         )}
 
-
-        {currentUser && (
-          <button
-            className="side-item"
-            type="button"
-            onClick={() => {
-              setFeedbackOrderId('');
-              setFeedbackRating(5);
-              setFeedbackText('');
-              setShowFeedback(true);
-              setMenu(false);
-            }}
-          >
-            <Icon>
-              ★
-            </Icon>
-
-            <span>
-              Feedback
-            </span>
-
-            <em>
-              {myFeedback.length || ''}
-            </em>
-          </button>
-        )}
-
         {isAdmin && (
           <a
             className="side-item side-admin"
@@ -3819,22 +3617,60 @@ export default function Home() {
 
                     <div className="product-bottom">
 
-                      <b>
-                        {product.price}
-                      </b>
+                      <div className="product-pricing">
+                        {Array.isArray(product.priceOptions) && product.priceOptions.length ? (
+                          <div className="product-price-tiers">
+                            {product.priceOptions.map((option, priceIndex) => (
+                              <div
+                                className="product-price-tier"
+                                key={`${product.name}-tier-${priceIndex}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() =>
+                                  openCheckout(
+                                    product,
+                                    option
+                                  )
+                                }
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    openCheckout(
+                                      product,
+                                      option
+                                    );
+                                  }
+                                }}
+                                title={`Select ${option.label || 'this price option'}`}
+                                style={{ cursor: 'pointer' }}
+                              >
+                                <span>→ {option.label}</span>
+                                <b>{option.price}</b>
+                                {option.slots ? <small>({option.slots})</small> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <b>{product.price || 'FREE'}</b>
+                        )}
+                      </div>
 
                       <button
                         className="card-action"
                         onClick={() =>
                           openCheckout(
-                            product
+                            product,
+                            Array.isArray(product.priceOptions) && product.priceOptions.length
+                              ? product.priceOptions[0]
+                              : null
                           )
                         }
                       >
-                        {product.price ===
-                        'FREE'
-                          ? 'VIEW ↗'
-                          : 'BUY / CHECKOUT ↗'}
+                        {Array.isArray(product.priceOptions) && product.priceOptions.length
+                          ? 'SELECT PLAN ↗'
+                          : product.price === 'FREE'
+                            ? 'VIEW ↗'
+                            : 'BUY / CHECKOUT ↗'}
                       </button>
 
                     </div>
@@ -4487,184 +4323,6 @@ export default function Home() {
 
 
       {/* ===================================================
-          CUSTOMER FEEDBACK
-      ==================================================== */}
-
-      {showFeedback && (
-        <div
-          className="modal-bg"
-          onClick={() => setShowFeedback(false)}
-        >
-          <div
-            className="modal feedback-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              className="modal-x"
-              onClick={() => setShowFeedback(false)}
-            >
-              ×
-            </button>
-
-            <div className="modal-icon feedback-icon">
-              ★
-            </div>
-
-            <span className="eyebrow">
-              // PURCHASED PRODUCT
-            </span>
-
-            <h2>
-              CUSTOMER FEEDBACK
-            </h2>
-
-            <p>
-              Share your experience with a confirmed purchase.
-              One feedback entry is allowed per order.
-            </p>
-
-            <div className="feedback-form">
-              {myOrders.filter(
-                (order) =>
-                  order.status === 'confirmed' &&
-                  !myFeedback.some(
-                    (item) => item.orderId === order.id
-                  )
-              ).length > 0 ? (
-                <>
-                  <label className="feedback-label">
-                    SELECT CONFIRMED PURCHASE
-                    <select
-                      className="feedback-select"
-                      value={feedbackOrderId}
-                      onChange={(event) =>
-                        setFeedbackOrderId(event.target.value)
-                      }
-                    >
-                      <option value="">
-                        Choose an order...
-                      </option>
-                      {myOrders
-                        .filter(
-                          (order) =>
-                            order.status === 'confirmed' &&
-                            !myFeedback.some(
-                              (item) => item.orderId === order.id
-                            )
-                        )
-                        .map((order) => (
-                          <option key={order.id} value={order.id}>
-                            {order.productName} — {order.id}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-
-                  <div className="feedback-rating" aria-label="Rating">
-                    <span className="feedback-label">RATING</span>
-                    <div className="feedback-stars">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          className={
-                            star <= feedbackRating
-                              ? 'feedback-star active'
-                              : 'feedback-star'
-                          }
-                          onClick={() => setFeedbackRating(star)}
-                          aria-label={`${star} star${star > 1 ? 's' : ''}`}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <label className="feedback-label">
-                    YOUR FEEDBACK
-                    <textarea
-                      className="feedback-textarea"
-                      value={feedbackText}
-                      maxLength={1000}
-                      onChange={(event) =>
-                        setFeedbackText(event.target.value)
-                      }
-                      placeholder="Tell us what you think about the purchased product or service..."
-                    />
-                    <small className="feedback-counter">
-                      {feedbackText.length}/1000
-                    </small>
-                  </label>
-
-                  <button
-                    className="primary-btn big"
-                    type="button"
-                    disabled={
-                      feedbackBusy ||
-                      !feedbackOrderId ||
-                      !feedbackText.trim()
-                    }
-                    onClick={submitFeedback}
-                  >
-                    {feedbackBusy
-                      ? 'SUBMITTING…'
-                      : 'SUBMIT FEEDBACK →'}
-                  </button>
-                </>
-              ) : (
-                <div className="empty-admin-state feedback-empty">
-                  <b>NO REVIEWABLE PURCHASES</b>
-                  <span>
-                    Feedback becomes available after an order is confirmed.
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {myFeedback.length > 0 && (
-              <div className="feedback-history">
-                <div className="feedback-history-head">
-                  <span className="eyebrow">
-                    // YOUR HISTORY
-                  </span>
-                  <b>PREVIOUS FEEDBACK</b>
-                </div>
-
-                <div className="feedback-list">
-                  {myFeedback.map((item) => (
-                    <div className="feedback-card" key={item.id || `${item.orderId}-${item.createdAt}`}>
-                      <div className="feedback-card-head">
-                        <b>{item.productName}</b>
-                        <span className="feedback-verified">
-                          ✓ VERIFIED
-                        </span>
-                      </div>
-                      <div className="feedback-card-stars">
-                        {'★'.repeat(Math.max(0, Math.min(5, Number(item.rating) || 0)))}
-                        <span>
-                          {String(item.rating || 0)}/5
-                        </span>
-                      </div>
-                      <p>{item.message}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button
-              className="outline-btn big"
-              onClick={() => setShowFeedback(false)}
-            >
-              CLOSE
-            </button>
-          </div>
-        </div>
-      )}
-
-
-      {/* ===================================================
           CHECKOUT
       ==================================================== */}
 
@@ -4717,6 +4375,18 @@ export default function Home() {
 
               <div className="checkout-price">
                 {checkout.price}
+                {checkout.selectedPriceLabel ? (
+                  <small
+                    style={{
+                      display: 'block',
+                      marginTop: 4,
+                      fontSize: '0.55em',
+                      opacity: 0.7,
+                    }}
+                  >
+                    {checkout.selectedPriceLabel}
+                  </small>
+                ) : null}
               </div>
 
             </div>
